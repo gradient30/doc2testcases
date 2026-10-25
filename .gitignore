@@ -1,4 +1,6 @@
 .zcode/
+data/
+uploads/
 __pycache__/
 *.pyc
 *.pyo

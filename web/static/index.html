@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doc2testcases · 测试用例生成控制台</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #fff; --line: #e3e6ea; --text: #1f2329; --muted: #8a919c;
+  --brand: #3565e0; --brand-weak: #eef3fe; --ok: #1f9d55; --ok-weak: #e8f7ef;
+  --warn: #c8871a; --warn-weak: #fdf3e3; --err: #d64545; --err-weak: #fdeeee;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+       background: var(--bg); color: var(--text); }
+.wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 60px; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+h1 { font-size: 20px; margin: 0; }
+h1 small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+.hdr-right { display: flex; align-items: center; gap: 10px; }
+.model-chip { color: var(--muted); font-size: 12px; background: var(--card);
+              border: 1px solid var(--line); padding: 3px 10px; border-radius: 12px; }
+button { font: inherit; cursor: pointer; border-radius: 7px; border: 1px solid var(--line);
+         background: var(--card); color: var(--text); padding: 6px 14px; }
+button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.link { border: none; background: none; color: var(--brand); padding: 2px 6px; }
+button.link.danger { color: var(--err); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+        padding: 18px; margin-bottom: 16px; }
+.drop { border: 1.5px dashed #c4cbd4; border-radius: 10px; padding: 26px 16px; text-align: center;
+        color: var(--muted); transition: .15s; }
+.drop.on { border-color: var(--brand); background: var(--brand-weak); color: var(--brand); }
+.files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--brand-weak);
+             color: var(--brand); border-radius: 14px; padding: 3px 6px 3px 12px; font-size: 13px; }
+.file-chip .x { cursor: pointer; font-weight: 700; padding: 0 6px; border-radius: 50%; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+select, input { font: inherit; padding: 6px 10px; border: 1px solid var(--line);
+                border-radius: 7px; background: #fff; color: var(--text); }
+.job { border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+       padding: 16px; margin-bottom: 14px; }
+.job-hdr { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.job-id { font-weight: 600; }
+.job-time { color: var(--muted); font-size: 12px; }
+.badge { font-size: 12px; border-radius: 12px; padding: 2px 10px; border: 1px solid transparent; }
+.b-queued   { background: #eef0f3; color: var(--muted); }
+.b-running  { background: var(--brand-weak); color: var(--brand); }
+.b-done     { background: var(--ok-weak); color: var(--ok); }
+.b-failed, .b-interrupted { background: var(--err-weak); color: var(--err); }
+.b-canceled { background: var(--warn-weak); color: var(--warn); }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line);
+         vertical-align: top; word-break: break-all; }
+th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.stage { display: inline-block; font-size: 12px; border-radius: 10px; padding: 1px 9px;
+         background: #eef0f3; color: var(--muted); white-space: nowrap; }
+.stage.s-done { background: var(--ok-weak); color: var(--ok); }
+.stage.s-parsing, .stage.s-generating, .stage.s-reviewing, .stage.s-rendering {
+  background: var(--brand-weak); color: var(--brand); }
+.stage.s-failed { background: var(--err-weak); color: var(--err); }
+.mini { font-size: 12px; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+.m-ok  { background: var(--ok-weak); color: var(--ok); }
+.m-warn{ background: var(--warn-weak); color: var(--warn); }
+.m-err { background: var(--err-weak); color: var(--err); }
+.m-gray{ background: #eef0f3; color: var(--muted); }
+.findings { margin-top: 8px; background: #fafbfc; border: 1px solid var(--line);
+            border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.findings li { margin: 2px 0; }
+.notes { color: var(--warn); }
+.dl-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.dl-row a { text-decoration: none; font-size: 13px; color: var(--brand);
+            border: 1px solid var(--brand); border-radius: 7px; padding: 3px 12px; }
+.dl-row a.disabled { color: var(--muted); border-color: var(--line);
+                     pointer-events: none; background: #f6f7f9; }
+.err-line { color: var(--err); font-size: 13px; margin-top: 8px; }
+.actions { margin-left: auto; display: flex; gap: 6px; }
+.empty { text-align: center; color: var(--muted); padding: 30px 0; }
+dialog { border: none; border-radius: 14px; padding: 0; width: min(480px, 92vw);
+         box-shadow: 0 18px 60px rgba(0,0,0,.18); }
+dialog::backdrop { background: rgba(20,24,30,.4); }
+.dlg-body { padding: 20px 22px; }
+.dlg-body h3 { margin: 0 0 4px; }
+.dlg-body p.tip { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.field input, .field select { width: 100%; }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--brand);
+        border-top-color: transparent; border-radius: 50%; animation: rot .8s linear infinite;
+        vertical-align: -2px; margin-right: 4px; }
+@keyframes rot { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>doc2testcases <small>需求文档 → 测试用例（xls / yaml / json / md / xmind）</small></h1>
+    <div class="hdr-right">
+      <span class="model-chip" id="modelChip">—</span>
+      <button id="btnSettings">⚙ 设置</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="drop" id="drop">
+      拖拽需求文档到此处，或点击选择文件<br>
+      <span style="font-size:12px">支持 md / pdf / docx / xlsx / xls，可多选</span>
+      <input type="file" id="fileInput" multiple accept=".md,.pdf,.docx,.xlsx,.xls" hidden>
+    </div>
+    <div class="files" id="fileList"></div>
+    <div class="row">
+      <label>评审修订轮数
+        <select id="rounds">
+          <option value="1">1 轮（更快）</option>
+          <option value="2" selected>2 轮（推荐）</option>
+          <option value="0">0 轮（仅生成+评审结论，不修订）</option>
+        </select>
+      </label>
+      <button class="primary" id="btnStart">开始生成</button>
+      <span id="startHint" style="color:var(--muted);font-size:12.5px"></span>
+    </div>
+  </div>
+
+  <div id="jobs"><div class="empty">暂无任务</div></div>
+</div>
+
+<dialog id="dlg">
+  <form class="dlg-body" id="settingsForm" method="dialog">
+    <h3>模型设置</h3>
+    <p class="tip">API Key 仅保存在本机 <code>data/doc2tc.db</code>，不会上传到任何地方。
+      兼容 OpenAI 风格（BigModel v4 等）与 Anthropic 风格端点。</p>
+    <div class="field"><label>API Key</label>
+      <input type="password" id="sKey" placeholder="（未更改）" autocomplete="off"></div>
+    <div class="field"><label>Base URL</label>
+      <input id="sBase" placeholder="https://open.bigmodel.cn/api/paas/v4"></div>
+    <div class="field"><label>模型</label>
+      <input id="sModel" placeholder="glm-4.6"></div>
+    <div class="field"><label>接口风格</label>
+      <select id="sStyle">
+        <option value="openai">OpenAI 兼容（/chat/completions）</option>
+        <option value="anthropic">Anthropic 风格（/v1/messages）</option>
+      </select></div>
+    <div class="dlg-foot">
+      <button type="button" id="dlgCancel">取消</button>
+      <button type="button" class="primary" id="dlgSave">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+let picked = [];          // {name, file}
+let jobsCache = [];
+
+const STAGE_TEXT = { queued: "排队中", parsing: "解析文档", generating: "生成用例",
+  reviewing: "评审/修订", rendering: "渲染五格式", done: "完成", failed: "失败",
+  skipped: "跳过" };
+const STATUS_TEXT = { queued: "排队中", running: "运行中", done: "已完成", failed: "失败",
+  canceled: "已取消", interrupted: "已中断" };
+const FMT_LABEL = { xls: "Excel", yaml: "YAML", json: "JSON", md: "Markdown", xmind: "XMind" };
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+/* ---------------- 设置 ---------------- */
+async function loadSettings() {
+  try {
+    const s = await (await fetch("/api/settings")).json();
+    $("#sBase").value = s.base_url || "";
+    $("#sModel").value = s.model || "";
+    $("#sStyle").value = s.style || "openai";
+    $("#sKey").placeholder = s.api_key_masked || "粘贴 API Key";
+    $("#modelChip").textContent = s.model ? `${s.model} · ${s.api_key_masked ? "Key 已配置" : "未配置 Key"}` : "—";
+    $("#startHint").textContent = s.api_key_masked ? "" : "先在「设置」里保存 API Key";
+  } catch (e) { console.error(e); }
+}
+$("#btnSettings").onclick = () => $("#dlg").showModal();
+$("#dlgCancel").onclick = () => $("#dlg").close();
+$("#dlgSave").onclick = async () => {
+  const body = { base_url: $("#sBase").value.trim(), model: $("#sModel").value.trim(),
+                 style: $("#sStyle").value };
+  if ($("#sKey").value.trim()) body.api_key = $("#sKey").value.trim();
+  const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
+                                           body: JSON.stringify(body) });
+  if (r.ok) { $("#dlg").close(); $("#sKey").value = ""; loadSettings(); }
+  else alert("保存失败: " + (await r.json()).detail);
+};
+
+/* ---------------- 上传 ---------------- */
+const drop = $("#drop");
+drop.onclick = () => $("#fileInput").click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("on"); };
+drop.ondragleave = () => drop.classList.remove("on");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("on"); addFiles(e.dataTransfer.files); };
+$("#fileInput").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
+const OK_EXT = /\.(md|pdf|docx|xlsx|xls)$/i;
+function addFiles(list) {
+  for (const f of list) {
+    if (!OK_EXT.test(f.name)) { alert(`不支持的格式: ${f.name}`); continue; }
+    if (picked.some(p => p.name === f.name)) continue;
+    picked.push({ name: f.name, file: f });
+  }
+  renderPicked();
+}
+function renderPicked() {
+  $("#fileList").innerHTML = picked.map((p, i) =>
+    `<span class="file-chip">${esc(p.name)}<span class="x" data-i="${i}">×</span></span>`).join("");
+  $("#fileList").querySelectorAll(".x").forEach(x => x.onclick = () => {
+    picked.splice(+x.dataset.i, 1); renderPicked(); });
+}
+$("#btnStart").onclick = async () => {
+  if (!picked.length) { alert("请先选择文档"); return; }
+  const fd = new FormData();
+  picked.forEach(p => fd.append("files", p.file, p.name));
+  fd.append("rounds", $("#rounds").value);
+  $("#btnStart").disabled = true; $("#btnStart").textContent = "上传中…";
+  try {
+    const r = await fetch("/api/jobs", { method: "POST", body: fd });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.status);
+    picked = []; renderPicked(); refresh(true);
+  } catch (e) { alert("创建任务失败: " + e.message); }
+  finally { $("#btnStart").disabled = false; $("#btnStart").textContent = "开始生成"; }
+};
+
+/* ---------------- 任务列表 ---------------- */
+function countsText(c) {
+  if (!c || !c.total) return "—";
+  return `${c.total} 条（P0 ${c.P0}/P1 ${c.P1}/P2 ${c.P2}）`;
+}
+function docRow(d) {
+  const stage = `<span class="stage s-${esc(d.stage)}">${STAGE_TEXT[d.stage] || d.stage}</span>`;
+  let verdict = '<span class="mini m-gray">—</span>';
+  if (d.stage === "failed") verdict = '<span class="mini m-err">失败</span>';
+  else if (d.approved === true) verdict = '<span class="mini m-ok">评审通过</span>' + (d.reused ? ' <span class="mini m-gray">续跑复用</span>' : "");
+  else if (d.approved === false) verdict = '<span class="mini m-warn">仍有评审意见</span>';
+  const extra = [];
+  if (d.notes) extra.push(`<div class="notes">备注：${esc(d.notes)}</div>`);
+  if (d.error) extra.push(`<div class="err-line">${esc(d.error)}</div>`);
+  if (d.findings && d.findings.length) extra.push(
+    `<div class="findings"><b>未决评审意见</b><ul>` +
+    d.findings.map(f => `<li><span class="mini ${f.severity === "high" ? "m-err" : f.severity === "medium" ? "m-warn" : "m-gray"}">${esc(f.severity)}</span> ${esc(f.what)}</li>`).join("") +
+    `</ul></div>`);
+  return `<tr><td>${esc(d.name)}</td><td>${stage}</td><td>${esc(d.module || "—")}</td>
+    <td>${countsText(d.counts)}</td><td>${verdict}</td></tr>
+    ${extra.length ? `<tr><td colspan="5" style="border-bottom:none;padding-top:0">${extra.join("")}</td></tr>` : ""}`;
+}
+function jobCard(j) {
+  const running = j.running || j.status === "running" || j.status === "queued";
+  const render = j.render || {};
+  const dl = Object.keys(FMT_LABEL).map(fmt => {
+    const ok = (render.files || []).includes(fmt);
+    return `<a class="${ok ? "" : "disabled"}" href="/api/jobs/${j.id}/download/${fmt}">⬇ ${FMT_LABEL[fmt]}</a>`;
+  }).join("");
+  const renderBadge = render.files && render.files.length
+    ? (render.ok ? '<span class="mini m-ok">回读校验通过</span>'
+                 : '<span class="mini m-err">校验未通过</span>')
+    : "";
+  const time = new Date(j.created_at).toLocaleString("zh-CN", { hour12: false });
+  const actions = [
+    running ? `<button class="link danger" data-act="cancel" data-id="${j.id}">取消</button>` : "",
+    ["failed", "canceled", "interrupted", "done"].includes(j.status)
+      ? `<button class="link" data-act="retry" data-id="${j.id}" title="已完成文档复用结果，仅重跑失败部分">重试续跑</button>
+         <button class="link" data-act="fresh" data-id="${j.id}" title="忽略缓存全部重新生成">重新生成</button>` : "",
+    !running ? `<button class="link danger" data-act="del" data-id="${j.id}">删除</button>` : "",
+  ].join("");
+  return `<div class="job" id="job-${j.id}">
+    <div class="job-hdr">
+      <span class="job-id">${esc(j.id)}</span>
+      <span class="job-time">${time} · ${j.params?.files?.length || 0} 份文档 · 修订≤${j.params?.rounds ?? "-"} 轮</span>
+      <span class="badge b-${esc(j.status)}">${running ? '<span class="spin"></span>' : ""}${STATUS_TEXT[j.status] || j.status}</span>
+      <span class="actions">${actions}</span>
+    </div>
+    ${j.docs?.length ? `<table><tr><th>文档</th><th>阶段</th><th>模块</th><th>用例</th><th>评审</th></tr>
+      ${j.docs.map(docRow).join("")}</table>` : ""}
+    ${j.error && j.status !== "done" ? `<div class="err-line">${esc(j.error)}</div>` : ""}
+    ${render.files || render.failures?.length
+      ? `<div class="dl-row">${renderBadge} ${dl}</div>` : ""}
+  </div>`;
+}
+async function refresh(now) {
+  try {
+    const j = await (await fetch("/api/jobs")).json();
+    jobsCache = j.jobs || [];
+    $("#jobs").innerHTML = jobsCache.length ? jobsCache.map(jobCard).join("")
+                                            : '<div class="empty">暂无任务</div>';
+    bindActions();
+  } catch (e) { /* 服务重启中 */ }
+}
+function bindActions() {
+  document.querySelectorAll("button[data-act]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.id, act = b.dataset.act;
+    if (act === "del" && !confirm("删除该任务及其产物？")) return;
+    const url = act === "cancel" ? `/api/jobs/${id}/cancel`
+              : act === "retry" ? `/api/jobs/${id}/retry`
+              : act === "fresh" ? `/api/jobs/${id}/retry?fresh=true`
+              : `/api/jobs/${id}`;
+    const r = await fetch(url, { method: act === "del" ? "DELETE" : "POST" });
+    if (!r.ok) alert("操作失败: " + ((await r.json()).detail || r.status));
+    refresh(true);
+  });
+}
+let hasRunning = false;
+setInterval(() => {
+  const running = jobsCache.some(j => j.running || j.status === "running" || j.status === "queued");
+  if (running !== hasRunning) { hasRunning = running; refresh(); }
+}, 2000);   // 有任务运行时加速刷新
+setInterval(refresh, 8000);
+loadSettings(); refresh();
+</script>
+</body>
+</html>
