@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>长颈鹿骑自行车 · SVG 动态原型</title>
+<link rel="stylesheet" href="style.css">
+<script defer src="main.js"></script>
+</head>
+<body>
+<main class="stage">
+<svg id="scene" viewBox="0 0 960 540" preserveAspectRatio="xMidYMid meet" role="img" aria-label="一只长颈鹿在骑自行车：车轮、曲柄、链条、踏板与地面共用一条 CSS 时间轴，齿轮相位精确锁定；点击暂停会自然下车并放下脚踏支架">
+  <title>长颈鹿骑自行车</title>
+  <defs>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe3ff"/>
+      <stop offset="1" stop-color="#eef7ff"/>
+    </linearGradient>
+
+    <!-- 车轮（以原点为中心，通过外层 g 平移定位） -->
+    <g id="wheelShape">
+      <circle r="52" fill="none" stroke="#363c43" stroke-width="7"/>
+      <circle r="44.5" fill="none" stroke="#cfd6dd" stroke-width="3.5"/>
+      <g stroke="#b9c2ca" stroke-width="2.2">
+        <line x1="0" y1="-44" x2="0" y2="44"/>
+        <line x1="0" y1="-44" x2="0" y2="44" transform="rotate(36)"/>
+        <line x1="0" y1="-44" x2="0" y2="44" transform="rotate(72)"/>
+        <line x1="0" y1="-44" x2="0" y2="44" transform="rotate(108)"/>
+        <line x1="0" y1="-44" x2="0" y2="44" transform="rotate(144)"/>
+      </g>
+      <circle r="7" fill="#99a3ab"/>
+      <circle r="2.5" fill="#59626b"/>
+      <rect x="-1.5" y="-47" width="3" height="7" rx="1.4" fill="#8a939b"/>
+    </g>
+
+    <g id="cloud" fill="#ffffff" opacity="0.88">
+      <ellipse rx="30" ry="14"/>
+      <ellipse cx="-24" cy="5" rx="20" ry="11"/>
+      <ellipse cx="26" cy="5" rx="22" ry="12"/>
+    </g>
+    <g id="cloudTile">
+      <use href="#cloud" transform="translate(140 88)"/>
+      <use href="#cloud" transform="translate(470 122) scale(0.75)"/>
+      <use href="#cloud" transform="translate(690 64) scale(0.6)"/>
+      <use href="#cloud" transform="translate(300 58) scale(0.5)"/>
+    </g>
+
+    <g id="hillTile">
+      <path fill="#d3e7c8" d="M0 474 L0 444 Q110 404 220 440 T440 436 T660 446 T816.8 430 L816.8 474 Z"/>
+      <path fill="#c2dcb6" d="M0 474 L0 458 Q160 432 330 456 T640 452 T816.8 446 L816.8 474 Z"/>
+    </g>
+
+    <!-- 与地面同速的近景（树/灌木/石头），816.8px 一循环 -->
+    <g id="nearTile">
+      <ellipse cx="280" cy="472" rx="9" ry="5" fill="#b3a998"/>
+      <g>
+        <rect x="427" y="441" width="6" height="33" rx="2.5" fill="#9a6b43"/>
+        <circle cx="430" cy="432" r="18" fill="#7cb26a"/>
+        <circle cx="414" cy="440" r="12" fill="#7cb26a"/>
+        <circle cx="446" cy="440" r="12" fill="#7cb26a"/>
+      </g>
+      <g fill="#8fbf7f">
+        <ellipse cx="110" cy="468" rx="24" ry="11"/>
+        <ellipse cx="128" cy="470" rx="15" ry="8"/>
+        <ellipse cx="612" cy="470" rx="18" ry="8"/>
+        <ellipse cx="626" cy="471" rx="11" ry="6"/>
+      </g>
+      <circle cx="520" cy="467" r="2.4" fill="#e8798a"/>
+      <circle cx="527" cy="470" r="2" fill="#f0a04b"/>
+    </g>
+
+    <!-- 前景草丛（在车前掠过） -->
+    <g id="tuftTile" fill="#5f8f4f" opacity="0.55">
+      <path d="M90 540 Q86 518 78 512 Q92 516 94 530 Q96 514 104 508 Q98 522 100 540 Z"/>
+      <path d="M370 540 Q367 522 360 517 Q373 520 375 532 Q378 519 385 514 Q379 525 381 540 Z"/>
+      <path d="M700 540 Q696 516 687 510 Q702 515 704 530 Q707 512 716 507 Q709 521 711 540 Z"/>
+    </g>
+
+    <rect id="toothF" x="22.58" y="-2.6" width="7.5" height="5.2" rx="2"/>
+    <rect id="toothR" x="9.79" y="-2.4" width="7" height="4.8" rx="1.8"/>
+  </defs>
+
+  <!-- 天空与远景 -->
+  <rect width="960" height="540" fill="url(#skyGrad)"/>
+  <circle cx="84" cy="84" r="44" fill="#ffd76e" opacity="0.35"/>
+  <circle cx="84" cy="84" r="30" fill="#ffd76e"/>
+
+  <g class="scroll scrollClouds">
+    <use href="#cloudTile"/>
+    <use href="#cloudTile" transform="translate(816.8 0)"/>
+  </g>
+  <g class="scroll scrollFar ride">
+    <use href="#hillTile"/>
+    <use href="#hillTile" transform="translate(816.8 0)"/>
+  </g>
+
+  <!-- 地面 -->
+  <rect y="474" width="960" height="66" fill="#e6d2a8"/>
+  <rect y="474" width="960" height="8" fill="#a8d492"/>
+  <line x1="0" y1="474" x2="960" y2="474" stroke="#86b877" stroke-width="2"/>
+  <line class="groundDash ride" x1="0" y1="492" x2="960" y2="492" stroke="#c9b285" stroke-width="3" stroke-dasharray="40 25.344"/>
+  <line class="groundDash ride" x1="0" y1="512" x2="960" y2="512" stroke="#cdb98f" stroke-width="2.5" stroke-dasharray="14 18.672"/>
+
+  <g class="scroll scrollNear ride">
+    <use href="#nearTile"/>
+    <use href="#nearTile" transform="translate(816.8 0)"/>
+  </g>
+
+  <ellipse cx="480" cy="477" rx="215" ry="7" fill="#000000" opacity="0.13"/>
+
+  <!-- 车轮（后轮带 id 供读数） -->
+  <g class="spin wheelSpin ride" id="wheelRear">
+    <use href="#wheelShape" transform="translate(310 418)"/>
+  </g>
+  <g class="spin wheelSpin ride">
+    <use href="#wheelShape" transform="translate(650 418)"/>
+  </g>
+
+  <!-- 远侧腿（深色，位于车架之后） -->
+  <path class="legFar" d="M 462 272 L 535.25 332.49 L 496 419 L 512 423"/>
+  <path class="hoofFar" d="M 496 419 L 512 423"/>
+
+  <!-- 远侧曲柄 + 踏板（滞后半圈） -->
+  <g transform="translate(470 424)">
+    <g class="spin crankFar ride">
+      <circle r="36" fill="none"/>
+      <line x1="0" y1="0" x2="-26" y2="0" stroke="#262a2e" stroke-width="6" stroke-linecap="round"/>
+      <g transform="translate(-26 0)">
+        <g class="spin pedalRevFar ride">
+          <circle r="10" fill="none"/>
+          <rect x="-10" y="-2" width="20" height="5" rx="2" fill="#262a2e"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- 飞轮（随 后轮同速旋转） -->
+  <g transform="translate(310 418)">
+    <g class="spin wheelSpin ride">
+      <circle r="9.79" fill="#454c54"/>
+      <g transform="rotate(4.58)" fill="#5a636c">
+        <use href="#toothR"/>
+        <use href="#toothR" transform="rotate(45)"/>
+        <use href="#toothR" transform="rotate(90)"/>
+        <use href="#toothR" transform="rotate(135)"/>
+        <use href="#toothR" transform="rotate(180)"/>
+        <use href="#toothR" transform="rotate(225)"/>
+        <use href="#toothR" transform="rotate(270)"/>
+        <use href="#toothR" transform="rotate(315)"/>
+      </g>
+      <circle r="3.5" fill="#2f343a"/>
+    </g>
+  </g>
+
+  <!-- 车架 -->
+  <g stroke="#e0564f" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M470 424 L310 418"/>
+    <path d="M310 418 L442 318"/>
+    <path d="M470 424 L440 312"/>
+    <path d="M470 424 L612 330"/>
+    <path d="M444 318 L608 328"/>
+  </g>
+  <path d="M608 320 L620 354" stroke="#d5453f" stroke-width="9" stroke-linecap="round"/>
+  <path d="M616 350 L650 418" stroke="#d5453f" stroke-width="6" stroke-linecap="round"/>
+  <path d="M608 320 L600 297 Q597 291 589 293" stroke="#3c3f44" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+  <circle cx="589" cy="293" r="4.5" fill="#2a2d31"/>
+  <path d="M440 310 L445 340" stroke="#3c3f44" stroke-width="5"/>
+  <path d="M410 306 Q438 296 466 304 Q452 314 424 313 Q412 312 410 306 Z" fill="#4a3b32"/>
+
+  <!-- 脚踏支架（平时收起贴在车架上，驻车时放下） -->
+  <g transform="translate(452 421)">
+    <g id="kickstand" class="kick">
+      <circle r="53" fill="none"/>
+      <line x1="0" y1="0" x2="-16" y2="49" stroke="#3c3f44" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="-16" cy="49" r="3.5" fill="#2a2d31"/>
+    </g>
+  </g>
+
+  <!-- 链条（实线内衬 + 动画虚线链节） -->
+  <path d="M 311.02 405.25 L 472.04 398.5 A 25.58 25.58 0 1 1 467.96 449.5 L 308.98 430.75 A 12.79 12.79 0 1 1 311.02 405.25 Z"
+        fill="none" stroke="#6a7076" stroke-width="1.4"/>
+  <path class="chainDash ride" id="chainPath"
+        d="M 311.02 405.25 L 472.04 398.5 A 25.58 25.58 0 1 1 467.96 449.5 L 308.98 430.75 A 12.79 12.79 0 1 1 311.02 405.25 Z"
+        fill="none" stroke="#4a4f55" stroke-width="3.5" stroke-dasharray="7.133 2.913"/>
+
+  <!-- 牙盘（随曲柄 4s/圈） -->
+  <g transform="translate(470 424)">
+    <g class="spin crankSpin ride" id="crankMaster">
+      <circle r="22.58" fill="#e3b23c"/>
+      <circle r="14" fill="none" stroke="#c19332" stroke-width="2"/>
+      <g fill="#c19332">
+        <circle cx="8" cy="0" r="2.8"/><circle cx="-8" cy="0" r="2.8"/>
+        <circle cx="0" cy="8" r="2.8"/><circle cx="0" cy="-8" r="2.8"/>
+      </g>
+      <g transform="rotate(4.58)" fill="#d8a832">
+        <use href="#toothF"/>
+        <use href="#toothF" transform="rotate(22.5)"/>
+        <use href="#toothF" transform="rotate(45)"/>
+        <use href="#toothF" transform="rotate(67.5)"/>
+        <use href="#toothF" transform="rotate(90)"/>
+        <use href="#toothF" transform="rotate(112.5)"/>
+        <use href="#toothF" transform="rotate(135)"/>
+        <use href="#toothF" transform="rotate(157.5)"/>
+        <use href="#toothF" transform="rotate(180)"/>
+        <use href="#toothF" transform="rotate(202.5)"/>
+        <use href="#toothF" transform="rotate(225)"/>
+        <use href="#toothF" transform="rotate(247.5)"/>
+        <use href="#toothF" transform="rotate(270)"/>
+        <use href="#toothF" transform="rotate(292.5)"/>
+        <use href="#toothF" transform="rotate(315)"/>
+        <use href="#toothF" transform="rotate(337.5)"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- 近侧曲柄 + 踏板 -->
+  <g transform="translate(470 424)">
+    <g class="spin crankSpin ride">
+      <circle r="36" fill="none"/>
+      <line x1="0" y1="0" x2="26" y2="0" stroke="#3c3f44" stroke-width="6" stroke-linecap="round"/>
+      <g transform="translate(26 0)">
+        <g class="spin pedalRev ride">
+          <circle r="10" fill="none"/>
+          <rect x="-10" y="-2" width="20" height="5" rx="2" fill="#2f3338"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- 长颈鹿（rider 组：驻车时整体平移到车旁；腿/臂在组外以世界坐标逐帧贴合） -->
+  <g id="rider">
+  <g transform="translate(424 262)">
+    <g class="tailWag">
+      <path d="M0 0 C-12 10 -19 24 -17 38" fill="none" stroke="#f0ad4b" stroke-width="6" stroke-linecap="round"/>
+      <ellipse cx="-17" cy="42" rx="5" ry="8" fill="#8a5a2b" transform="rotate(14 -17 42)"/>
+    </g>
+  </g>
+
+  <g class="giraffeBob">
+    <path d="M416 282 C408 252 428 224 470 216 C520 206 556 222 566 246 C574 266 560 292 520 300 C480 308 428 306 416 282 Z" fill="#f4b652"/>
+    <g clip-path="url(#bodyClip)" fill="#dd8a2f" opacity="0.9">
+      <ellipse cx="455" cy="248" rx="14" ry="10" transform="rotate(-15 455 248)"/>
+      <ellipse cx="505" cy="240" rx="12" ry="9" transform="rotate(10 505 240)"/>
+      <ellipse cx="530" cy="268" rx="11" ry="8"/>
+      <ellipse cx="472" cy="276" rx="10" ry="7"/>
+    </g>
+    <path d="M552 252 C566 206 582 156 606 106 L644 122 C624 166 610 210 596 256 Z" fill="#f4b652"/>
+    <path d="M642 120 C625 164 611 208 596 252" fill="none" stroke="#c96f22" stroke-width="7" stroke-dasharray="7 6" stroke-linecap="round"/>
+    <circle cx="573" cy="190" r="6" fill="#dd8a2f"/>
+    <circle cx="588" cy="152" r="5.5" fill="#dd8a2f"/>
+    <circle cx="601" cy="122" r="5" fill="#dd8a2f"/>
+
+    <g transform="translate(628 96) rotate(14) scale(1.28)">
+      <g class="headBob">
+        <ellipse cx="-20" cy="-10" rx="9" ry="4.5" fill="#f4b652" transform="rotate(-35 -20 -10)"/>
+        <ellipse cx="-21" cy="-11" rx="5" ry="2.2" fill="#dd8a2f" transform="rotate(-35 -21 -11)"/>
+        <line x1="-8" y1="-18" x2="-12" y2="-32" stroke="#7a4a21" stroke-width="3" stroke-linecap="round"/>
+        <line x1="2" y1="-20" x2="1" y2="-34" stroke="#7a4a21" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="-12" cy="-34" r="3.5" fill="#b56a1f"/>
+        <circle cx="1" cy="-36" r="3.5" fill="#b56a1f"/>
+        <path d="M-16 -6 C-16 -18 -4 -22 4 -18 C14 -14 18 -6 16 2 C14 10 4 14 -6 12 C-14 10 -16 4 -16 -6 Z" fill="#f4b652"/>
+        <circle cx="-2" cy="4" r="12" fill="#f4b652"/>
+        <path d="M10 -4 C22 -8 34 -4 38 4 C40 10 34 16 24 16 C14 16 8 12 6 6 Z" fill="#f6d493"/>
+        <circle cx="30" cy="4" r="1.8" fill="#7a4a21"/>
+        <path d="M14 13 Q20 17 28 15" fill="none" stroke="#7a4a21" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="6" cy="-4" r="5" fill="#ffffff"/>
+        <circle cx="7.6" cy="-3.6" r="2.4" fill="#2d2320"/>
+        <circle cx="8.6" cy="-4.8" r="0.9" fill="#ffffff"/>
+        <rect class="lid" x="0" y="-10" width="12" height="12" fill="#f4b652"/>
+      </g>
+    </g>
+  </g>
+  </g><!-- /rider -->
+  <clipPath id="bodyClip">
+    <path d="M416 282 C408 252 428 224 470 216 C520 206 556 222 566 246 C574 266 560 292 520 300 C480 308 428 306 416 282 Z"/>
+  </clipPath>
+
+  <!-- 前腿扶把 -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path class="armFar" d="M538 238 L548 264 L584 292 L600 297" stroke="#c88a33" stroke-width="12"/>
+    <path class="armHoofFar" d="M584 292 L600 297" stroke="#5a3818" stroke-width="12"/>
+    <path class="armNear" d="M546 234 L558 262 L592 292 L608 297" stroke="#f0ad4b" stroke-width="12"/>
+    <path class="armHoofNear" d="M592 292 L608 297" stroke="#6e441f" stroke-width="12"/>
+  </g>
+  <circle cx="538" cy="238" r="8" fill="#c88a33"/>
+  <circle cx="546" cy="234" r="8" fill="#f0ad4b"/>
+
+  <!-- 近侧腿（最上层，蹄踩踏板） -->
+  <path class="legNear" d="M 462 272 L 535.25 332.49 L 496 419 L 512 423"/>
+  <path class="hoofNear" d="M 496 419 L 512 423"/>
+
+  <!-- 前景草丛 -->
+  <g class="scroll scrollFront ride">
+    <use href="#tuftTile"/>
+    <use href="#tuftTile" transform="translate(816.8 0)"/>
+  </g>
+</svg>
+
+<header class="hud">
+  <h1>🦒 长颈鹿骑行 <span>SVG 动态原型</span></h1>
+</header>
+
+<aside class="panel" aria-label="动画控制台">
+  <div class="row head-row">
+    <label for="rate">速度倍率</label>
+    <output id="rateVal">×1.00</output>
+  </div>
+  <div class="row">
+    <input id="rate" type="range" min="0.1" max="3" step="0.05" value="1">
+  </div>
+  <div class="grid">
+    <div class="cell"><span class="k">车速</span><span class="v" id="kmh">5.88</span><span class="u">km/h</span></div>
+    <div class="cell"><span class="k">踏频</span><span class="v" id="cad">15.0</span><span class="u">rpm</span></div>
+    <div class="cell"><span class="k">轮速</span><span class="v" id="wrpm">30.0</span><span class="u">rpm</span></div>
+    <div class="cell"><span class="k">里程</span><span class="v" id="dist">0.0</span><span class="u">m</span></div>
+  </div>
+  <div class="row phase">
+    <span class="k">齿轮相位</span>
+    <span class="mono" id="phase">θ轮 0.0° = 2·θ曲 0.0° · Δ 0.00°</span>
+    <span class="ok" id="lockBadge">已锁定</span>
+  </div>
+  <div class="row">
+    <span class="k">状态</span>
+    <span class="mono" id="stateTxt">骑行中</span>
+  </div>
+  <div class="row btn-row">
+    <button id="toggle" type="button">⏸ 停车</button>
+    <span class="hint"><kbd>Space</kbd> 停车/骑行 · 传动 16T:8T = 2.0</span>
+  </div>
+  <p class="arch">动画全部由 CSS @keyframes 时间轴驱动（车轮 / 曲柄 / 链条 / 踏板 / 腿部同轴锁定）；停车下车与支架也是 CSS 关键帧序列，停车点锁定在曲柄规范相位（0°/180°）保证无跳变。<br>JS 仅切换状态类、设置 playbackRate、并读取 currentTime 换算读数。</p>
+</aside>
+</main>
+</body>
+</html>

@@ -1,0 +1,350 @@
+/* 长颈鹿骑自行车 · CSS 时间轴
+   相位锁定原理：所有旋转件共用 @keyframes spinFull，仅周期成整数比——
+   车轮/飞轮 2s（30rpm），曲柄/牙盘 4s（15rpm，传动比 2.0），
+   链条 4s 内恰前进 16 个链节虚线周期（16 齿×节距），
+   腿部 24 帧 IK 关键帧 4s/圈，脚与曲柄圆逐帧重合。
+   JS 只改 playbackRate / playState，不改任何关键帧。 */
+
+html, body { height: 100%; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+.stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+svg { display: block; width: 100%; height: 100%; }
+
+/* ---------- 旋转（fill-box 保证嵌套平移下枢轴正确） ---------- */
+.spin { transform-box: fill-box; transform-origin: 50% 50%; }
+.wheelSpin  { animation: spinFull 2s linear infinite; }
+.crankSpin  { animation: spinFull 4s linear infinite; }
+.crankFar   { animation: spinFull 4s linear infinite; animation-delay: -2s; }
+.pedalRev   { animation: spinFull 4s linear infinite reverse; }
+.pedalRevFar{ animation: spinFull 4s linear infinite reverse; animation-delay: -2s; }
+@keyframes spinFull { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ---------- 链条（4s = 16 个虚线周期，与齿盘同锁） ---------- */
+.chainDash { animation: chainFlow 4s linear infinite; }
+
+/* ---------- 地面 / 视差滚动 ---------- */
+.groundDash { animation: groundFlow 0.4s linear infinite; } /* 65.344px/0.4s = 轮面线速度 */
+@keyframes groundFlow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 65.344px; } }
+
+.scroll { transform-box: view-box; }
+.scrollNear   { animation: tileScroll 5s  linear infinite; }   /* 816.8px/5s = 地速 */
+.scrollFront  { animation: tileScroll 5s  linear infinite; }
+.scrollFar    { animation: tileScroll 10s linear infinite; }   /* 0.5× 视差 */
+.scrollClouds { animation: tileScroll 30s linear infinite; }   /* 1/6× 视差 */
+@keyframes tileScroll { from { transform: translateX(0); } to { transform: translateX(-816.8px); } }
+
+/* ---------- 腿部踏频（脚本生成的 IK 关键帧，4s/圈） ---------- */
+.legNear, .hoofNear { animation: 4s linear infinite; }
+.legNear  { animation-name: pedalStroke; stroke: #f0ad4b; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.hoofNear { animation-name: hoofStroke;  stroke: #6e441f; stroke-width: 13; stroke-linecap: round; fill: none; }
+.legFar   { animation: pedalStroke 4s linear infinite; animation-delay: -2s; stroke: #c88a33; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.hoofFar  { animation: hoofStroke  4s linear infinite; animation-delay: -2s; stroke: #5a3818; stroke-width: 13; stroke-linecap: round; fill: none; }
+
+/* ---------- 角色小动作 ---------- */
+.giraffeBob { animation: giraffeBob 4s ease-in-out infinite; } /* 踩踏下死点时下沉，4s 内两次 */
+@keyframes giraffeBob {
+  0%, 50%, 100% { transform: translateY(0); }
+  25%, 75%      { transform: translateY(1.7px); }
+}
+.headBob { transform-box: fill-box; transform-origin: 50% 50%; animation: headBob 4s ease-in-out infinite; }
+@keyframes headBob {
+  0%, 100% { transform: rotate(-2deg); }
+  50%      { transform: rotate(2.2deg); }
+}
+.tailWag { transform-box: fill-box; transform-origin: 100% 0; animation: tailWag 2s ease-in-out infinite; }
+@keyframes tailWag {
+  0%, 100% { transform: rotate(-9deg); }
+  50%      { transform: rotate(9deg); }
+}
+.lid { transform-box: fill-box; transform-origin: 50% 0; animation: blink 5.4s linear infinite; }
+@keyframes blink {
+  0%, 94%   { transform: scaleY(0); }
+  96.5%     { transform: scaleY(1); }
+  99%, 100% { transform: scaleY(0); }
+}
+
+/* ===== 以下由 tools/generate-leg-keyframes.mjs 生成 ===== */
+@keyframes pedalStroke {
+  0% { d: path("M 462 272 L 535.25 332.49 L 496 419 L 512 423"); }
+  4.17% { d: path("M 462 272 L 530.68 337.64 L 495.11 425.73 L 511.11 429.73"); }
+  8.33% { d: path("M 462 272 L 525.3 342.84 L 492.52 432 L 508.52 436"); }
+  12.5% { d: path("M 462 272 L 519.5 347.62 L 488.38 437.38 L 504.38 441.38"); }
+  16.67% { d: path("M 462 272 L 513.79 351.64 L 483 441.52 L 499 445.52"); }
+  20.83% { d: path("M 462 272 L 508.78 354.68 L 476.73 444.11 L 492.73 448.11"); }
+  25% { d: path("M 462 272 L 505.03 356.7 L 470 445 L 486 449"); }
+  29.17% { d: path("M 462 272 L 502.87 357.76 L 463.27 444.11 L 479.27 448.11"); }
+  33.33% { d: path("M 462 272 L 502.32 358.02 L 457 441.52 L 473 445.52"); }
+  37.5% { d: path("M 462 272 L 503.19 357.6 L 451.62 437.38 L 467.62 441.38"); }
+  41.67% { d: path("M 462 272 L 505.25 356.58 L 447.48 432 L 463.48 436"); }
+  45.83% { d: path("M 462 272 L 508.27 354.97 L 444.89 425.73 L 460.89 429.73"); }
+  50% { d: path("M 462 272 L 512.07 352.73 L 444 419 L 460 423"); }
+  54.17% { d: path("M 462 272 L 516.48 349.83 L 444.89 412.27 L 460.89 416.27"); }
+  58.33% { d: path("M 462 272 L 521.31 346.21 L 447.48 406 L 463.48 410"); }
+  62.5% { d: path("M 462 272 L 526.31 341.92 L 451.62 400.62 L 467.62 404.62"); }
+  66.67% { d: path("M 462 272 L 531.17 337.12 L 457 396.48 L 473 400.48"); }
+  70.83% { d: path("M 462 272 L 535.5 332.18 L 463.27 393.89 L 479.27 397.89"); }
+  75% { d: path("M 462 272 L 538.98 327.68 L 470 393 L 486 397"); }
+  79.17% { d: path("M 462 272 L 541.34 324.24 L 476.73 393.89 L 492.73 397.89"); }
+  83.33% { d: path("M 462 272 L 542.51 322.43 L 483 396.48 L 499 400.48"); }
+  87.5% { d: path("M 462 272 L 542.46 322.51 L 488.38 400.62 L 504.38 404.62"); }
+  91.67% { d: path("M 462 272 L 541.22 324.43 L 492.52 406 L 508.52 410"); }
+  95.83% { d: path("M 462 272 L 538.8 327.91 L 495.11 412.27 L 511.11 416.27"); }
+  100% { d: path("M 462 272 L 535.25 332.49 L 496 419 L 512 423"); }
+}
+
+@keyframes hoofStroke {
+  0% { d: path("M 496 419 L 512 423"); }
+  4.17% { d: path("M 495.11 425.73 L 511.11 429.73"); }
+  8.33% { d: path("M 492.52 432 L 508.52 436"); }
+  12.5% { d: path("M 488.38 437.38 L 504.38 441.38"); }
+  16.67% { d: path("M 483 441.52 L 499 445.52"); }
+  20.83% { d: path("M 476.73 444.11 L 492.73 448.11"); }
+  25% { d: path("M 470 445 L 486 449"); }
+  29.17% { d: path("M 463.27 444.11 L 479.27 448.11"); }
+  33.33% { d: path("M 457 441.52 L 473 445.52"); }
+  37.5% { d: path("M 451.62 437.38 L 467.62 441.38"); }
+  41.67% { d: path("M 447.48 432 L 463.48 436"); }
+  45.83% { d: path("M 444.89 425.73 L 460.89 429.73"); }
+  50% { d: path("M 444 419 L 460 423"); }
+  54.17% { d: path("M 444.89 412.27 L 460.89 416.27"); }
+  58.33% { d: path("M 447.48 406 L 463.48 410"); }
+  62.5% { d: path("M 451.62 400.62 L 467.62 404.62"); }
+  66.67% { d: path("M 457 396.48 L 473 400.48"); }
+  70.83% { d: path("M 463.27 393.89 L 479.27 397.89"); }
+  75% { d: path("M 470 393 L 486 397"); }
+  79.17% { d: path("M 476.73 393.89 L 492.73 397.89"); }
+  83.33% { d: path("M 483 396.48 L 499 400.48"); }
+  87.5% { d: path("M 488.38 400.62 L 504.38 404.62"); }
+  91.67% { d: path("M 492.52 406 L 508.52 410"); }
+  95.83% { d: path("M 495.11 412.27 L 511.11 416.27"); }
+  100% { d: path("M 496 419 L 512 423"); }
+}
+
+/* 链条：闭环 44 节，节距 p=10.0459px；每曲柄一圈前进 16×p = 16 个虚线周期 */
+@keyframes chainFlow {
+  from { stroke-dashoffset: 8.589px; }
+  to   { stroke-dashoffset: -152.144px; }
+}
+
+/* 下车编排：0% 帧与骑行规范相位（0°/180°）逐像素一致，交换动画无跳变；
+   上车直接复用同一组关键帧反向播放（animation-direction: reverse） */
+@keyframes dismountRider {
+  0% { transform: translate(0px, 0px); }
+  10% { transform: translate(5px, -6.67px); }
+  12% { transform: translate(6px, -8px); }
+  25% { transform: translate(-8.18px, -7.21px); }
+  28% { transform: translate(-11.45px, -7.03px); }
+  40% { transform: translate(-24.55px, -6.3px); }
+  45% { transform: translate(-30px, -6px); }
+  55% { transform: translate(-44px, -4px); }
+  62% { transform: translate(-53.8px, -2.6px); }
+  70% { transform: translate(-65px, -1px); }
+  75% { transform: translate(-72px, 0px); }
+  78% { transform: translate(-73.92px, 0.24px); }
+  80% { transform: translate(-75.2px, 0.4px); }
+  90% { transform: translate(-81.6px, 1.2px); }
+  100% { transform: translate(-88px, 2px); }
+}
+
+@keyframes dismountLegNear {
+  0% { d: path("M 462 272 L 535.25 332.49 L 496 419 L 512 423"); }
+  10% { d: path("M 467 265.33 L 549.88 311.77 L 510 398 L 526 402"); }
+  12% { d: path("M 468 264 L 551.16 309.92 L 508.22 394.67 L 524.22 398.67"); }
+  25% { d: path("M 453.82 264.79 L 545.06 291.25 L 496.67 373 L 512.67 377"); }
+  28% { d: path("M 450.55 264.97 L 543.04 286.64 L 494 368 L 510 372"); }
+  40% { d: path("M 437.45 265.7 L 526.92 297.65 L 458.71 363.76 L 474.71 367.76"); }
+  45% { d: path("M 432 266 L 519.13 303.86 L 444 362 L 460 366"); }
+  55% { d: path("M 418 268 L 497.76 319.62 L 418.12 371.41 L 434.12 375.41"); }
+  62% { d: path("M 408.2 269.4 L 481.72 329.56 L 400 378 L 416 382"); }
+  70% { d: path("M 397 271 L 461.23 340.99 L 386 399 L 402 403"); }
+  75% { d: path("M 390 272 L 447.2 347.85 L 377.25 412.13 L 393.25 416.13"); }
+  78% { d: path("M 388.08 272.24 L 438.87 352.52 L 372 420 L 388 424"); }
+  80% { d: path("M 386.8 272.4 L 434.05 354.81 L 369.67 424.67 L 385.67 428.67"); }
+  90% { d: path("M 380.4 273.2 L 404.42 365.11 L 358 448 L 374 452"); }
+  100% { d: path("M 374 274 L 368.69 368.85 L 356 463 L 372 467"); }
+}
+
+@keyframes dismountHoofNear {
+  0% { d: path("M 496 419 L 512 423"); }
+  10% { d: path("M 510 398 L 526 402"); }
+  12% { d: path("M 508.22 394.67 L 524.22 398.67"); }
+  25% { d: path("M 496.67 373 L 512.67 377"); }
+  28% { d: path("M 494 368 L 510 372"); }
+  40% { d: path("M 458.71 363.76 L 474.71 367.76"); }
+  45% { d: path("M 444 362 L 460 366"); }
+  55% { d: path("M 418.12 371.41 L 434.12 375.41"); }
+  62% { d: path("M 400 378 L 416 382"); }
+  70% { d: path("M 386 399 L 402 403"); }
+  75% { d: path("M 377.25 412.13 L 393.25 416.13"); }
+  78% { d: path("M 372 420 L 388 424"); }
+  80% { d: path("M 369.67 424.67 L 385.67 428.67"); }
+  90% { d: path("M 358 448 L 374 452"); }
+  100% { d: path("M 356 463 L 372 467"); }
+}
+
+@keyframes dismountLegFar {
+  0% { d: path("M 462 272 L 512.07 352.73 L 444 419 L 460 423"); }
+  10% { d: path("M 467 265.33 L 523.64 341.6 L 452 404 L 468 408"); }
+  12% { d: path("M 468 264 L 526.08 339.17 L 453.33 400.27 L 469.33 404.27"); }
+  25% { d: path("M 453.82 264.79 L 534.62 314.75 L 462 376 L 478 380"); }
+  28% { d: path("M 450.55 264.97 L 529.41 317.94 L 453.6 375.2 L 469.6 379.2"); }
+  40% { d: path("M 437.45 265.7 L 505.95 331.53 L 420 372 L 436 376"); }
+  45% { d: path("M 432 266 L 496.18 336.05 L 412.67 381.33 L 428.67 385.33"); }
+  55% { d: path("M 418 268 L 474.83 344.13 L 398 400 L 414 404"); }
+  62% { d: path("M 408.2 269.4 L 459.9 349.1 L 395.2 418.67 L 411.2 422.67"); }
+  70% { d: path("M 397 271 L 437.82 356.78 L 392 440 L 408 444"); }
+  75% { d: path("M 390 272 L 419.68 362.25 L 392 453.13 L 408 457.13"); }
+  78% { d: path("M 388.08 272.24 L 400.69 366.4 L 392 461 L 408 465"); }
+  80% { d: path("M 386.8 272.4 L 399.75 366.51 L 391.82 461.18 L 407.82 465.18"); }
+  90% { d: path("M 380.4 273.2 L 394.44 367.16 L 390.91 462.09 L 406.91 466.09"); }
+  100% { d: path("M 374 274 L 387.53 368.03 L 390 463 L 406 467"); }
+}
+
+@keyframes dismountHoofFar {
+  0% { d: path("M 444 419 L 460 423"); }
+  10% { d: path("M 452 404 L 468 408"); }
+  12% { d: path("M 453.33 400.27 L 469.33 404.27"); }
+  25% { d: path("M 462 376 L 478 380"); }
+  28% { d: path("M 453.6 375.2 L 469.6 379.2"); }
+  40% { d: path("M 420 372 L 436 376"); }
+  45% { d: path("M 412.67 381.33 L 428.67 385.33"); }
+  55% { d: path("M 398 400 L 414 404"); }
+  62% { d: path("M 395.2 418.67 L 411.2 422.67"); }
+  70% { d: path("M 392 440 L 408 444"); }
+  75% { d: path("M 392 453.13 L 408 457.13"); }
+  78% { d: path("M 392 461 L 408 465"); }
+  80% { d: path("M 391.82 461.18 L 407.82 465.18"); }
+  90% { d: path("M 390.91 462.09 L 406.91 466.09"); }
+  100% { d: path("M 390 463 L 406 467"); }
+}
+
+@keyframes dismountArmNear {
+  0% { d: path("M 546 234 L 558 262 L 592 292 L 608 297"); }
+  12% { d: path("M 552 226 L 560 258 L 592 290 L 608 295"); }
+  45% { d: path("M 516 228 L 505 258 L 512 288 L 528 293"); }
+  75% { d: path("M 474 234 L 464 264 L 468 298 L 484 303"); }
+  100% { d: path("M 458 236 L 452 272 L 462 308 L 478 313"); }
+}
+
+@keyframes dismountArmHoofNear {
+  0% { d: path("M 592 292 L 608 297"); }
+  12% { d: path("M 592 290 L 608 295"); }
+  45% { d: path("M 512 288 L 528 293"); }
+  75% { d: path("M 468 298 L 484 303"); }
+  100% { d: path("M 462 308 L 478 313"); }
+}
+
+@keyframes dismountArmFar {
+  0% { d: path("M 538 238 L 548 264 L 584 292 L 600 297"); }
+  12% { d: path("M 544 230 L 552 260 L 584 290 L 600 295"); }
+  45% { d: path("M 508 232 L 496 260 L 504 288 L 520 293"); }
+  75% { d: path("M 466 238 L 456 264 L 460 296 L 476 301"); }
+  100% { d: path("M 450 240 L 442 272 L 450 308 L 466 313"); }
+}
+
+@keyframes dismountArmHoofFar {
+  0% { d: path("M 584 292 L 600 297"); }
+  12% { d: path("M 584 290 L 600 295"); }
+  45% { d: path("M 504 288 L 520 293"); }
+  75% { d: path("M 460 296 L 476 301"); }
+  100% { d: path("M 450 308 L 466 313"); }
+}
+
+
+/* ---------- 停车 / 驻车 / 上车 ----------
+   停车点被锁定在曲柄规范相位（0°/180°），下车关键帧的 0% 帧与该姿态
+   逐像素一致，切换动画无跳变；上车复用同一组关键帧反向播放。 */
+
+.kick { transform-box: fill-box; transform-origin: 50% 50%; transform: rotate(78deg); }
+
+.parked .ride { animation-play-state: paused; } /* 骑行时间轴冻结在下车规范相位 */
+
+.parked #rider       { animation: dismountRider 1.5s ease-in-out forwards; }
+.parked .legNear     { animation: dismountLegNear 1.5s ease-in-out forwards; }
+.parked .hoofNear    { animation: dismountHoofNear 1.5s ease-in-out forwards; }
+.parked .legFar      { animation: dismountLegFar 1.5s ease-in-out forwards; }
+.parked .hoofFar     { animation: dismountHoofFar 1.5s ease-in-out forwards; }
+.parked .armNear     { animation: dismountArmNear 1.5s ease-in-out forwards; }
+.parked .armHoofNear { animation: dismountArmHoofNear 1.5s ease-in-out forwards; }
+.parked .armFar      { animation: dismountArmFar 1.5s ease-in-out forwards; }
+.parked .armHoofFar  { animation: dismountArmHoofFar 1.5s ease-in-out forwards; }
+.parked #kickstand.kick { animation: kickDown .5s cubic-bezier(.34,1.56,.64,1) 1.15s forwards; }
+.parked .giraffeBob  { animation: breath 3.4s ease-in-out infinite; }
+.parked .tailWag     { animation: tailIdle 3.6s ease-in-out infinite; }
+.parked .headBob     { animation: headIdle 5.2s ease-in-out infinite; }
+
+/* 上车：收支架 → 身体/手臂同窗回位（保持贴合）→ 腿踩回规范相位踏板 */
+.mounting #kickstand.kick { animation: kickUp .45s ease-in both; }
+.mounting #rider       { animation: dismountRider 1.05s ease-in-out .5s reverse both; }
+.mounting .armNear     { animation: dismountArmNear 1.05s ease-in-out .5s reverse both; }
+.mounting .armHoofNear { animation: dismountArmHoofNear 1.05s ease-in-out .5s reverse both; }
+.mounting .armFar      { animation: dismountArmFar 1.05s ease-in-out .5s reverse both; }
+.mounting .armHoofFar  { animation: dismountArmHoofFar 1.05s ease-in-out .5s reverse both; }
+.mounting .legNear     { animation: dismountLegNear 1.15s ease-in-out 1.6s reverse both; }
+.mounting .hoofNear    { animation: dismountHoofNear 1.15s ease-in-out 1.6s reverse both; }
+.mounting .legFar      { animation: dismountLegFar 1.15s ease-in-out 1.6s reverse both; }
+.mounting .hoofFar     { animation: dismountHoofFar 1.15s ease-in-out 1.6s reverse both; }
+
+@keyframes kickDown {
+  from { transform: rotate(78deg); }
+  82%  { transform: rotate(-5deg); }
+  to   { transform: rotate(0deg); }
+}
+@keyframes kickUp {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(78deg); }
+}
+@keyframes breath {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(2.4px); }
+}
+@keyframes tailIdle {
+  0%, 100% { transform: rotate(-5deg); }
+  50%      { transform: rotate(6deg); }
+}
+@keyframes headIdle {
+  0%, 100% { transform: rotate(-1deg); }
+  40%      { transform: rotate(2.4deg); }
+  70%      { transform: rotate(.5deg); }
+}
+
+button#toggle:disabled { opacity: .55; cursor: default; }
+
+/* ---------- HUD ---------- */
+.hud { position: absolute; top: 18px; left: 22px; pointer-events: none; }
+.hud h1 { margin: 0; font-size: 21px; color: #23405c; text-shadow: 0 1px 0 rgba(255,255,255,.7); }
+.hud h1 span { font-size: 12px; font-weight: 400; opacity: .72; margin-left: 8px; }
+
+.panel {
+  position: absolute; top: 16px; right: 16px; width: 268px;
+  background: rgba(17, 22, 30, .78); color: #eef2f6;
+  border-radius: 14px; padding: 13px 16px 11px;
+  backdrop-filter: blur(8px); box-shadow: 0 8px 28px rgba(10, 20, 30, .25);
+  font-size: 13px; line-height: 1.45;
+}
+.row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.head-row { justify-content: space-between; }
+.head-row label { font-weight: 600; }
+output#rateVal { font-variant-numeric: tabular-nums; color: #ffb545; font-weight: 700; }
+input[type="range"] { flex: 1; accent-color: #ffb545; }
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 8px 0; }
+.cell { background: rgba(255,255,255,.06); border-radius: 9px; padding: 5px 9px; display: flex; align-items: baseline; gap: 6px; }
+.cell .k { font-size: 11px; color: #9fb0c0; }
+.cell .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cell .u { font-size: 10px; color: #9fb0c0; }
+
+.phase { flex-wrap: wrap; row-gap: 3px; }
+.phase .k { font-size: 11px; color: #9fb0c0; }
+.mono { font-variant-numeric: tabular-nums; font-size: 11.5px; color: #d7e2ec; }
+.ok { font-size: 11px; color: #3ecf6e; background: rgba(62, 207, 110, .14); border-radius: 20px; padding: 1px 9px; }
+
+.btn-row { margin-top: 8px; }
+button#toggle {
+  background: #ffb545; color: #241a05; border: none; border-radius: 8px;
+  padding: 6px 14px; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+button#toggle:hover { background: #ffc46a; }
+.hint { font-size: 11px; color: #9fb0c0; }
+kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 0 5px; font-family: inherit; }
+.arch { margin: 9px 0 2px; font-size: 10.5px; color: #8496a6; }
