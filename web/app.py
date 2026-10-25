@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+import os
 import sys
 
 sys.path.insert(0, str(BASE_DIR))
@@ -31,10 +32,12 @@ from core.parsers import SUPPORTED_EXTS  # noqa: E402
 from core.renderer import FORMATS  # noqa: E402
 from core.store import Store  # noqa: E402
 
-DATA_DIR = BASE_DIR / "data"
+# 可用环境变量隔离第二个实例（测试/多开）：DOC2TC_DATA_DIR / DOC2TC_PORT
+DATA_DIR = Path(os.environ.get("DOC2TC_DATA_DIR", str(BASE_DIR / "data")))
 JOBS_DIR = DATA_DIR / "jobs"
 WEB_DIR = Path(__file__).resolve().parent
-HOST, PORT = "127.0.0.1", 8787
+HOST = os.environ.get("DOC2TC_HOST", "127.0.0.1")
+PORT = int(os.environ.get("DOC2TC_PORT", "8787"))
 
 store = Store(DATA_DIR / "doc2tc.db")
 _RUNNING: dict[str, dict] = {}          # job_id -> {"cancel": Event}

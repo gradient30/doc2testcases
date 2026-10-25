@@ -102,6 +102,7 @@ def process_job(
             try:
                 data = json.loads(cached.read_text(encoding="utf-8"))
                 cs = CaseSet.model_validate(data)
+                st.fmt = f.suffix.lstrip(".").lower()
                 st.stage, st.module, st.counts, st.notes = "done", cs.module, cs.counts(), cs.notes
                 st.approved, st.reused = True, True
                 render_dicts.append(cs.to_render_dict())
@@ -153,11 +154,11 @@ def process_job(
     if _canceled():
         raise JobCanceled()
 
-    # 渲染（有成功文档才渲染）
-    ok_docs = [s for s in states if s.stage == "done"]
+    # 渲染（有成功文档才渲染：新生成停在 reviewing，续跑复用已标记 done）
+    ok_docs = [s for s in states if s.stage in ("reviewing", "done")]
     if ok_docs:
-        for s in states:
-            if s.stage == "done":
+        for s in ok_docs:
+            if s.stage == "reviewing":
                 s.stage = "rendering"
         _emit(states, "rendering")
         report = renderer.render_all(sorted(render_dicts, key=lambda d: d["document"]), out_dir)
@@ -165,9 +166,12 @@ def process_job(
         for s in states:
             if s.stage == "rendering":
                 s.stage = "done"
-        outcome.ok = report.ok and all(s.stage == "done" for s in states)
+        failed_names = [s.name for s in states if s.stage == "failed"]
+        outcome.ok = report.ok and not failed_names
         if not report.ok:
             outcome.error = "; ".join(report.failures)
+        elif failed_names:
+            outcome.error = f"部分文档失败: {', '.join(failed_names)}"
     else:
         outcome.ok = False
         outcome.error = outcome.error or "没有任何文档成功生成用例"
