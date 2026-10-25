@@ -252,11 +252,11 @@ async def job_events(job_id: str):
                     yield ": ping\n\n"
             await asyncio.sleep(1.0)
 
-    return _sse(gen())
+    return _sse(gen)
 
 
-def _sse(gen):
-    return StreamingResponse(gen(), media_type="text/event-stream",
+def _sse(make_gen):
+    return StreamingResponse(make_gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
