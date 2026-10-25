@@ -161,6 +161,25 @@ def t_llm_abort_responsive():
         llm._chat_once = orig
 
 
+def t_extract_json():
+    """模型回复 JSON 提取：围栏/裸 JSON/前后噪声/嵌套字符串中的花括号。"""
+    from core.llm import LLMError, extract_json
+    obj = {"a": 1, "b": "}虚假括号"}
+    cases = [
+        "```json\n" + json.dumps(obj, ensure_ascii=False) + "\n```",
+        "前置说明……\n" + json.dumps(obj, ensure_ascii=False) + "\n后置说明",
+        json.dumps([1, 2]),
+    ]
+    for c in cases:
+        assert extract_json(c) in (obj, [1, 2])
+    for bad in ("", "没有 JSON 的回复", '{"unterminated": true'):
+        try:
+            extract_json(bad)
+            raise AssertionError("应当解析失败")
+        except LLMError:
+            pass
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -172,5 +191,6 @@ if __name__ == "__main__":
     check("store 持久化/恢复标记/设置", t_store_and_recover)
     check("jobs 无 LLM 解析失败路径", t_job_parse_failure)
     check("llm 取消即时响应(不睡满间隔)", t_llm_abort_responsive)
+    check("llm 模型回复 JSON 提取", t_extract_json)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)
