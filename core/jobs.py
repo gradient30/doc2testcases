@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import renderer
-from .llm import LLMConfig, LLMError
+from .llm import AbortedError, LLMConfig, LLMError
 from .parsers import ParseError, parse_document
 from .reviewer import PipelineResult, ReviewError, run_pipeline
 from .schema import CaseSet
@@ -80,6 +80,9 @@ def process_job(
     tc_dir = job_dir / "testcases"
     out_dir = job_dir / "out"
     tc_dir.mkdir(parents=True, exist_ok=True)
+    # 取消探针下沉到 LLM 重试循环：长重试等待期间也能即时响应取消
+    if cancel_check is not None:
+        llm_cfg = llm_cfg.model_copy(update={"abort_check": cancel_check})
 
     def _emit(docs: list[DocState], stage: str) -> None:
         if on_update is not None:
@@ -125,6 +128,8 @@ def process_job(
         _emit(states, "generating")
         try:
             result: PipelineResult = run_pipeline(llm_cfg, parsed, rounds=rounds)
+        except AbortedError as e:
+            raise JobCanceled() from e
         except (LLMError, ReviewError) as e:
             st.stage, st.error = "failed", f"LLM 调用失败: {e}"
             _emit(states, "generating")

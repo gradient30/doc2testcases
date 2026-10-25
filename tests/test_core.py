@@ -140,6 +140,27 @@ def t_job_parse_failure():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def t_llm_abort_responsive():
+    """取消探针：重试等待期间 abort_check 触发应立刻抛 AbortedError，不再睡满间隔。"""
+    import core.llm as llm
+    orig = llm._chat_once
+    def fake_once(cfg, system, user):
+        raise llm._RetryableLLMError("HTTP 405: 模拟风控")
+    llm._chat_once = fake_once
+    try:
+        cfg = llm.LLMConfig(api_key="sk-test-123456", max_api_retries=30,
+                            retry_interval_s=60, abort_check=lambda: True)
+        t0 = time.time()
+        try:
+            llm.chat(cfg, "s", "u")
+            raise AssertionError("应当抛出 AbortedError")
+        except llm.AbortedError:
+            pass
+        assert time.time() - t0 < 5, "取消未即时响应（不应睡满 60s）"
+    finally:
+        llm._chat_once = orig
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -150,5 +171,6 @@ if __name__ == "__main__":
     check("渲染五格式 + 回读校验(114例)", t_render_roundtrip)
     check("store 持久化/恢复标记/设置", t_store_and_recover)
     check("jobs 无 LLM 解析失败路径", t_job_parse_failure)
+    check("llm 取消即时响应(不睡满间隔)", t_llm_abort_responsive)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)

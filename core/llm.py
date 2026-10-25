@@ -35,10 +35,16 @@ class LLMConfig(BaseModel):
     # 限流/网络/5xx/并发占线 自动重试：每 retry_interval_s 秒一次（排队场景等 60s）
     max_api_retries: int = Field(default=30, ge=0, le=120)
     retry_interval_s: int = Field(default=60, ge=1, le=600)
+    # 运行时注入的取消探针（不持久化）：重试等待期间响应取消，None 表示不可取消
+    abort_check: Any = Field(default=None, exclude=True)
 
 
 class _RetryableLLMError(LLMError):
     """可重试错误：限流、网络抖动、5xx、网关超时、并发占线（3009）。"""
+
+
+class AbortedError(LLMError):
+    """调用方主动取消（重试等待期间响应 abort_check）。"""
 
 
 def _is_waf_block(status: int, text: str) -> bool:
@@ -140,6 +146,8 @@ def chat(cfg: LLMConfig, system: str, user: str) -> str:
         try:
             return _chat_once(cfg, system, user)
         except _RetryableLLMError as e:
+            if cfg.abort_check is not None and cfg.abort_check():
+                raise AbortedError("已取消（重试等待期间响应取消请求）") from e
             if attempt >= cfg.max_api_retries:
                 raise LLMError(f"重试 {attempt} 次后仍失败: {e}") from e
             attempt += 1
