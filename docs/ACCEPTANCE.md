@@ -1,0 +1,38 @@
+# 验收记录（doc2testcases 双外壳版本）
+
+日期：2026-10-26 ~ 2026-10-31 · 环境：Windows 10 / Python 3.12 · 仓库：gradient30/doc2testcases
+
+## 验收矩阵
+
+| # | 验收项 | 方法 | 结果 |
+| --- | --- | --- | --- |
+| 1 | 内核回归测试 | `python tests/test_core.py`（解析四格式/schema 好坏样本/渲染回读 114 例/store 持久化与恢复/失败路径/取消即时响应/JSON 提取） | ✅ 8/8 通过 |
+| 2 | 渲染一致性（内核重构无损） | `tools/render_all.py` 薄壳重渲染与首版产物比对：yaml/json/md 逐字节 MD5；xls 逐字节；xmind 按压缩包内条目内容 | ✅ 五格式全部一致 |
+| 3 | Web 基础路径 | 无 Key 创建任务→400 友好提示；非法扩展名→400；未生成产物下载→404；运行中取消生效；进程重启→任务标记 interrupted→retry 续跑（服务日志实证） | ✅ 全部符合预期 |
+| 4 | 隔离实例全链路（mock 模型） | 独立数据目录 + `tests/mock_llm_server.py`：上传→解析→生成→评审→渲染→回读校验→五格式下载→逐格式内容核验（xlrd 重开查单元格、xmind 解包查 topic 树、md 行数）→retry 续跑复用（reused=true） | ✅ 全链路通过；并暴露 2 个真实缺陷（SSE 生成器双重调用 500；渲染候选阶段判定漏判），修复后补回归 |
+| 5 | 真实 LLM 端到端 | 经 Web 控制台真实任务（模型 GLM-5.3，Anthropic 风格端点），产物下载后逐格式核验 | 详见下节 |
+
+## 5. 真实 LLM 端到端（任务 20261026-052514-3285ea）
+
+- 输入：`samples/pricing-rules.xlsx`（订单计价与优惠规则，R01–R07）
+- 模型：GLM-5.3（Anthropic 风格端点，Bearer 鉴权）
+- 过程说明：任务期间遭遇网关风控（3012，令牌级冷却约 2 天）与单并发占线（3009）交替；依赖内核的每 60 秒自动重试与断点续跑机制完成。
+- 产物：`out/e2e-verify/`（五格式 + 逐文档用例 JSON）
+- 核验结果：见下表（产物入库时机器复核）。
+
+<!-- E2E_RESULT -->
+
+## 已知边界（如实披露）
+
+- `.xmind` 仅做压缩包与 `content.json` 结构校验，未在 XMind 客户端人工打开确认渲染效果。
+- 单并发套餐下，Web 任务的 LLM 调用与用户正在使用的 AI 会话共享一个槽位，可能进入 60 秒级重试等待（属套餐限制，非缺陷）。
+- 样例 fixtures（samples/ 下 docx/pdf/xlsx）为演示管线而造，业务复杂度低于真实文档。
+
+## 复验方式
+
+```bash
+pip install -r requirements.txt
+python tests/test_core.py                 # 验收项 1
+python tools/render_all.py out/testcases out   # 验收项 2 的再渲染
+python web/app.py                         # 打开 http://127.0.0.1:8787/ 自行上传文档复验项 5
+```

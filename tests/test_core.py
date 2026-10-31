@@ -161,6 +161,32 @@ def t_llm_abort_responsive():
         llm._chat_once = orig
 
 
+def t_llm_business_envelope():
+    """HTTP 200 包着业务错误封套 {code,msg}：1005/3009 可重试，其他业务码显式报错，不得当成空成功。"""
+    import core.llm as llm
+    orig = llm._http_transport
+    def fake_transport(status_payload):
+        def _t(url, headers, payload, timeout):
+            return status_payload
+        return _t
+    try:
+        for code, retryable in ((1005, True), (3009, True), (429, True), (3006, False)):
+            llm._http_transport = fake_transport((200, json.dumps({"code": code, "msg": "x"})))
+            try:
+                llm._post("http://x", {}, {}, 5)
+                raise AssertionError("应当抛错")
+            except llm._RetryableLLMError:
+                assert retryable, f"code={code} 不应可重试"
+            except llm.LLMError:
+                assert not retryable, f"code={code} 应当可重试"
+        # 正常封套不受影响
+        llm._http_transport = fake_transport((200, json.dumps(
+            {"choices": [{"message": {"content": "hi"}}]})))
+        assert llm._post("http://x", {}, {}, 5)["choices"][0]["message"]["content"] == "hi"
+    finally:
+        llm._http_transport = orig
+
+
 def t_extract_json():
     """模型回复 JSON 提取：围栏/裸 JSON/前后噪声/嵌套字符串中的花括号。"""
     from core.llm import LLMError, extract_json
@@ -191,6 +217,7 @@ if __name__ == "__main__":
     check("store 持久化/恢复标记/设置", t_store_and_recover)
     check("jobs 无 LLM 解析失败路径", t_job_parse_failure)
     check("llm 取消即时响应(不睡满间隔)", t_llm_abort_responsive)
+    check("llm 业务错误封套处理(1005/3009 可重试)", t_llm_business_envelope)
     check("llm 模型回复 JSON 提取", t_extract_json)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)

@@ -122,9 +122,13 @@ def _post(url: str, headers: dict[str, str], payload: dict, timeout: int) -> dic
         data = json.loads(text) if text else None
     except json.JSONDecodeError:
         data = None
-    # 网关业务码：并发占线(3009)/限流(429)不论 HTTP 状态码如何都按可重试处理
-    if isinstance(data, dict) and data.get("code") in (3009, 429):
-        raise _RetryableLLMError(f"code={data.get('code')}: {data.get('msg', '')}")
+    # 网关业务码封套：{"code":..., "msg":...}（可能包在 HTTP 200 里）
+    if isinstance(data, dict) and "code" in data and "msg" in data \
+            and not ("choices" in data or "content" in data):
+        code = data.get("code")
+        if code in (3009, 429, 1005):  # 占线/限流/额度窗口超限：等待重试
+            raise _RetryableLLMError(f"code={code}: {data.get('msg', '')}")
+        raise LLMError(f"网关业务错误 code={code}: {data.get('msg', '')}")
     if status in (200, 201) and isinstance(data, dict):
         return data
     if _is_waf_block(status, text):
