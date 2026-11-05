@@ -4,10 +4,13 @@
 用法（工作目录为仓库根）:
     python tools/doc2tc.py 文档1 [文档2 ...] [--rounds N] [--out 目录]
 
-API Key 读取顺序: 环境变量 DOC2TC_API_KEY > data/doc2tc.db 中保存的设置（与 Web 共用）。
-可选环境变量: DOC2TC_BASE_URL / DOC2TC_MODEL / DOC2TC_STYLE(openai|anthropic)
+厂商预设（内置 GLM/DeepSeek/MiMo/MiniMax，见 core/providers.py）:
+    DOC2TC_PROVIDER=glm|deepseek|mimo|minimax|custom   # 缺省读已保存设置
+API Key 读取顺序: 环境变量 DOC2TC_API_KEY > data/doc2tc.db 中对应厂商的 Key 槽（与 Web 共用）。
+其它环境变量: DOC2TC_MODEL（当前厂商模型）；DOC2TC_BASE_URL / DOC2TC_STYLE（仅 custom 生效）。
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -16,25 +19,17 @@ sys.path.insert(0, str(BASE_DIR))
 
 from core.jobs import process_job  # noqa: E402
 from core.llm import LLMConfig  # noqa: E402
+from core.providers import ProviderError, resolve_llm_config  # noqa: E402
 from core.store import Store  # noqa: E402
 
 
 def build_llm_config() -> LLMConfig:
-    import os
     settings = Store(BASE_DIR / "data" / "doc2tc.db").settings_all()
-    api_key = os.environ.get("DOC2TC_API_KEY", settings.get("api_key", ""))
-    if not api_key:
-        print("未配置 API Key。任选其一：\n"
-              "  1) 设置环境变量 DOC2TC_API_KEY=<你的 Key>\n"
-              "  2) 在 Web 控制台（python web/app.py）的「设置」里保存 Key",
-              file=sys.stderr)
+    try:
+        return resolve_llm_config(settings, os.environ)
+    except ProviderError as e:
+        print(str(e), file=sys.stderr)
         raise SystemExit(2)
-    return LLMConfig(
-        api_key=api_key,
-        base_url=os.environ.get("DOC2TC_BASE_URL", settings.get("base_url", "")),
-        model=os.environ.get("DOC2TC_MODEL", settings.get("model", "")),
-        style=os.environ.get("DOC2TC_STYLE", settings.get("style", "openai")),
-    )
 
 
 def main() -> int:
