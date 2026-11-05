@@ -61,3 +61,22 @@ _LEGACY_KEYS = ("api_key", "base_url", "model", "style")
 
 class ProviderError(Exception):
     """厂商预设/配置错误（未知厂商、缺 Key、custom 配置不全）。"""
+
+
+def migrate_legacy_settings(raw: dict) -> dict:
+    """旧版平铺四字段（api_key/base_url/model/style）-> 新键集合。非旧形状返回 {}。"""
+    if not any(raw.get(k) for k in _LEGACY_KEYS):
+        return {}
+    provider = _BY_BASE_URL.get((raw.get("base_url") or "").rstrip("/"), "custom")
+    out: dict = {"provider": provider}
+    if provider == "custom":
+        for k, nk in (("api_key", "api_key:custom"), ("base_url", "base_url:custom"),
+                      ("model", "model:custom"), ("style", "style:custom")):
+            if raw.get(k):
+                out[nk] = raw[k]
+    else:
+        if raw.get("api_key"):
+            out[f"api_key:{provider}"] = raw["api_key"]
+        if raw.get("model"):
+            out[f"model:{provider}"] = raw["model"]
+    return out

@@ -221,6 +221,24 @@ def t_providers_registry():
             assert p["key_url"].startswith("https://")
 
 
+def t_providers_migrate():
+    """老平铺四字段 -> 新键集合：官方端点映射到对应厂商槽，未知端点归 custom。"""
+    from core.providers import migrate_legacy_settings as mig
+    # bigmodel 官方端点 -> glm 槽
+    out = mig({"api_key": "sk-old-1234567890", "base_url": "https://open.bigmodel.cn/api/paas/v4",
+               "model": "glm-4.6", "style": "openai"})
+    assert out == {"provider": "glm", "api_key:glm": "sk-old-1234567890", "model:glm": "glm-4.6"}
+    # 未知端点 -> custom，原值全保留
+    out2 = mig({"api_key": "sk-x-1234567890", "base_url": "https://gw.example/v1",
+                "model": "m1", "style": "anthropic"})
+    assert out2 == {"provider": "custom", "api_key:custom": "sk-x-1234567890",
+                    "base_url:custom": "https://gw.example/v1",
+                    "model:custom": "m1", "style:custom": "anthropic"}
+    # 尾斜杠也能匹配；空/新形状不迁移
+    assert mig({"base_url": "https://api.deepseek.com/"}) == {"provider": "deepseek"}
+    assert mig({}) == {} and mig({"provider": "glm"}) == {}
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -235,5 +253,6 @@ if __name__ == "__main__":
     check("llm 业务错误封套处理(1005/3009 可重试)", t_llm_business_envelope)
     check("llm 模型回复 JSON 提取", t_extract_json)
     check("providers 注册表完整性", t_providers_registry)
+    check("providers 老配置迁移(纯函数)", t_providers_migrate)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)
