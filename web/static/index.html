@@ -86,9 +86,21 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
 .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .field input, .field select { width: 100%; }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.test-result { font-size: 13px; margin-top: 12px; border-radius: 7px; padding: 7px 10px; display: none; }
-.test-result.ok  { background: var(--ok-weak); color: var(--ok); }
-.test-result.err { background: var(--err-weak); color: var(--err); word-break: break-all; }
+.dlg-msg { font-size: 13px; margin-top: 12px; border-radius: 7px; padding: 7px 10px; }
+.dlg-msg.ok  { background: var(--ok-weak); color: var(--ok); }
+.dlg-msg.err { background: var(--err-weak); color: var(--err); word-break: break-all; }
+.progress { height: 6px; background: #eef0f3; border-radius: 4px; overflow: hidden; margin-top: 12px; }
+.progress-bar { height: 100%; border-radius: 4px; background: var(--brand); transition: width .6s ease; }
+.progress-bar.run  { background: linear-gradient(90deg, #7ea1ec, var(--brand)); animation: pulse 1.6s ease infinite; }
+.progress-bar.done { background: var(--ok); }
+.progress-bar.fail { background: var(--err); }
+@keyframes pulse { 50% { opacity: .55; } }
+.progress-text { color: var(--muted); font-size: 12px; margin-top: 5px; }
+.toast { position: fixed; top: 18px; right: 18px; z-index: 99; padding: 9px 16px; border-radius: 8px;
+         font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.14); transition: opacity .4s, transform .4s; }
+.toast.t-ok  { background: var(--ok-weak); color: var(--ok); }
+.toast.t-err { background: var(--err-weak); color: var(--err); }
+.toast.out { opacity: 0; transform: translateY(-8px); }
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--brand);
         border-top-color: transparent; border-radius: 50%; animation: rot .8s linear infinite;
         vertical-align: -2px; margin-right: 4px; }
@@ -151,7 +163,7 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
           <option value="anthropic">Anthropic 风格（/v1/messages）</option>
         </select></div>
     </div>
-    <div class="test-result" id="testResult"></div>
+    <div class="dlg-msg" id="dlgMsg" style="display:none"></div>
     <div class="dlg-foot">
       <button type="button" id="dlgCancel">取消</button>
       <button type="button" id="dlgTest">测试连接</button>
@@ -175,6 +187,15 @@ const FMT_LABEL = { xls: "Excel", yaml: "YAML", json: "JSON", md: "Markdown", xm
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function toast(text, ok = true) {   // 右上角轻量动作反馈
+  const t = document.createElement("div");
+  t.className = "toast " + (ok ? "t-ok" : "t-err");
+  t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add("out"), 2200);
+  setTimeout(() => t.remove(), 2700);
+}
 
 /* ---------------- 设置 ---------------- */
 let PROVIDER_LIST = [], settingsCache = null;
@@ -243,30 +264,44 @@ function collectConfig() {   // 对话框当前配置（保存与测试共用）
   }
   return body;
 }
+function showMsg(text, ok) {   // 对话框内统一消息行（保存/测试共用）
+  const el = $("#dlgMsg");
+  el.className = "dlg-msg " + (ok ? "ok" : "err");
+  el.textContent = text;
+  el.style.display = "block";
+}
 $("#dlgTest").onclick = async () => {
-  const btn = $("#dlgTest"), res = $("#testResult");
+  const btn = $("#dlgTest");
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>测试中…';
-  res.style.display = "none";
+  $("#dlgMsg").style.display = "none";
   try {
     const r = await fetch("/api/test", { method: "POST", headers: { "content-type": "application/json" },
                                          body: JSON.stringify(collectConfig()) });
     const d = await r.json();
-    res.className = "test-result " + (d.ok ? "ok" : "err");
-    res.textContent = d.ok ? `✓ 测试通过 · ${d.model} · ${(d.latency_ms / 1000).toFixed(1)}s`
-                           : `✗ 测试失败：${d.error}`;
+    if (d.ok) showMsg(`✓ 测试通过 · ${d.model} · ${(d.latency_ms / 1000).toFixed(1)}s · 模型回复：${d.reply}`, true);
+    else showMsg(`✗ 测试失败：${d.error}`, false);
   } catch (e) {
-    res.className = "test-result err";
-    res.textContent = "✗ 请求失败: " + e.message;
+    showMsg("✗ 请求失败: " + e.message, false);
   } finally {
-    res.style.display = "";
     btn.disabled = false; btn.textContent = "测试连接";
   }
 };
 $("#dlgSave").onclick = async () => {
-  const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
-                                           body: JSON.stringify(collectConfig()) });
-  if (r.ok) { $("#dlg").close(); loadSettings(); }
-  else alert("保存失败: " + (await r.json()).detail);
+  const btn = $("#dlgSave");
+  btn.disabled = true; btn.textContent = "保存中…";
+  $("#dlgMsg").style.display = "none";
+  try {
+    const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
+                                             body: JSON.stringify(collectConfig()) });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    await loadSettings();                       // 刷新对话框内 Key 占位/厂商标记与顶栏 chip（对话框保持打开）
+    btn.textContent = "✓ 已保存";
+    showMsg("✓ 已保存（Key 仅存本机 data/doc2tc.db）", true);
+    setTimeout(() => { btn.disabled = false; btn.textContent = "保存"; }, 1200);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "保存";
+    showMsg("✗ 保存失败: " + e.message, false);
+  }
 };
 
 /* ---------------- 上传 ---------------- */
@@ -302,7 +337,8 @@ $("#btnStart").onclick = async () => {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || r.status);
     picked = []; renderPicked(); refresh(true);
-  } catch (e) { alert("创建任务失败: " + e.message); }
+    toast("✓ 任务已创建，正在生成用例…");
+  } catch (e) { toast("✗ 创建任务失败: " + e.message, false); }
   finally { $("#btnStart").disabled = false; $("#btnStart").textContent = "开始生成"; }
 };
 
@@ -328,6 +364,14 @@ function docRow(d) {
     <td>${countsText(d.counts)}</td><td>${verdict}</td></tr>
     ${extra.length ? `<tr><td colspan="5" style="border-bottom:none;padding-top:0">${extra.join("")}</td></tr>` : ""}`;
 }
+/* 阶段 -> 完成度权重（总进度 = 各文档均值；终态文档按 100 计） */
+const STAGE_PCT = { queued: 2, parsing: 10, generating: 40, reviewing: 72, rendering: 92,
+                    done: 100, failed: 100, skipped: 100 };
+function jobProgress(j) {
+  if (j.status === "done") return 100;
+  if (!j.docs || !j.docs.length) return j.status === "running" ? 5 : 0;
+  return Math.round(j.docs.reduce((a, d) => a + (STAGE_PCT[d.stage] ?? 0), 0) / j.docs.length);
+}
 function jobCard(j) {
   const running = j.running || j.status === "running" || j.status === "queued";
   const render = j.render || {};
@@ -347,6 +391,14 @@ function jobCard(j) {
          <button class="link" data-act="fresh" data-id="${j.id}" title="忽略缓存全部重新生成">重新生成</button>` : "",
     !running ? `<button class="link danger" data-act="del" data-id="${j.id}">删除</button>` : "",
   ].join("");
+  const pct = jobProgress(j);
+  const finishedDocs = (j.docs || []).filter(d => ["done", "failed", "skipped"].includes(d.stage)).length;
+  const barCls = j.status === "done" ? "done"
+               : ["failed", "canceled", "interrupted"].includes(j.status) ? "fail" : "run";
+  const total = j.docs?.length || j.params?.files?.length || 0;
+  const progHtml = `<div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+      <div class="progress-bar ${barCls}" style="width:${pct}%"></div></div>
+    <div class="progress-text">${pct}%${total ? ` · ${finishedDocs}/${total} 份文档完成` : ""}${running ? " · 处理中…" : ""}</div>`;
   return `<div class="job" id="job-${j.id}">
     <div class="job-hdr">
       <span class="job-id">${esc(j.id)}</span>
@@ -354,6 +406,7 @@ function jobCard(j) {
       <span class="badge b-${esc(j.status)}">${running ? '<span class="spin"></span>' : ""}${STATUS_TEXT[j.status] || j.status}</span>
       <span class="actions">${actions}</span>
     </div>
+    ${progHtml}
     ${j.docs?.length ? `<table><tr><th>文档</th><th>阶段</th><th>模块</th><th>用例</th><th>评审</th></tr>
       ${j.docs.map(docRow).join("")}</table>` : ""}
     ${j.error && j.status !== "done" ? `<div class="err-line">${esc(j.error)}</div>` : ""}
@@ -374,12 +427,23 @@ function bindActions() {
   document.querySelectorAll("button[data-act]").forEach(b => b.onclick = async () => {
     const id = b.dataset.id, act = b.dataset.act;
     if (act === "del" && !confirm("删除该任务及其产物？")) return;
+    b.disabled = true;
+    const ACT_TEXT = { cancel: "取消中…", retry: "重试中…", fresh: "重跑中…", del: "删除中…" };
+    const ACT_DONE = { cancel: "已请求取消", retry: "已开始重试续跑", fresh: "已开始重新生成", del: "已删除" };
+    const origin = b.textContent;
+    b.textContent = ACT_TEXT[act] || "处理中…";
     const url = act === "cancel" ? `/api/jobs/${id}/cancel`
               : act === "retry" ? `/api/jobs/${id}/retry`
               : act === "fresh" ? `/api/jobs/${id}/retry?fresh=true`
               : `/api/jobs/${id}`;
-    const r = await fetch(url, { method: act === "del" ? "DELETE" : "POST" });
-    if (!r.ok) alert("操作失败: " + ((await r.json()).detail || r.status));
+    try {
+      const r = await fetch(url, { method: act === "del" ? "DELETE" : "POST" });
+      if (!r.ok) throw new Error((await r.json()).detail || r.status);
+      toast("✓ " + (ACT_DONE[act] || "已完成"));
+    } catch (e) {
+      toast("✗ 操作失败: " + e.message, false);
+      b.disabled = false; b.textContent = origin;
+    }
     refresh(true);
   });
 }
