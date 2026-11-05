@@ -268,6 +268,7 @@ $("#sModelSel").onchange = () => {
 };
 $("#sModelManual").oninput = refreshModelMgr;
 $("#btnSaveModel").onclick = async () => {   // 收藏当前模型：进常用清单并设为当前
+  if ($("#sProvider").value !== "custom") return;   // 仅 custom 可管清单（防误触发写错槽）
   const cur = currentModelValue();
   if (!cur) { showMsg("请先选择或输入一个模型", false); return; }
   const list = (settingsCache && settingsCache.custom && settingsCache.custom.models) || [];
@@ -278,6 +279,7 @@ $("#btnSaveModel").onclick = async () => {   // 收藏当前模型：进常用�
   else showMsg("✗ 保存失败: " + (await r.json()).detail, false);
 };
 $("#btnRemoveModel").onclick = async () => {   // 从常用清单移除（当前使用不受影响）
+  if ($("#sProvider").value !== "custom") return;
   const cur = currentModelValue();
   const list = (settingsCache && settingsCache.custom && settingsCache.custom.models) || [];
   const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
