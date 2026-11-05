@@ -239,6 +239,38 @@ def t_providers_migrate():
     assert mig({}) == {} and mig({"provider": "glm"}) == {}
 
 
+def t_resolve_llm_config():
+    """配置组装：env > settings 槽 > 预设默认；缺 Key/缺 custom 配置/未知厂商显式报错。"""
+    from core.llm import LLMConfig
+    from core.providers import ProviderError, resolve_llm_config
+    cfg = resolve_llm_config({"provider": "deepseek", "api_key:deepseek": "sk-ds-1234567890",
+                              "model:deepseek": "deepseek-v4-pro"}, env={})
+    assert isinstance(cfg, LLMConfig)
+    assert (cfg.base_url, cfg.model, cfg.style) == ("https://api.deepseek.com", "deepseek-v4-pro", "openai")
+    # 预设默认模型 + env Key 覆盖
+    cfg2 = resolve_llm_config({"provider": "glm"}, env={"DOC2TC_API_KEY": "sk-env-1234567890"})
+    assert cfg2.model == "glm-5.3" and cfg2.api_key == "sk-env-1234567890"
+    # env 的 provider/model 覆盖 settings
+    cfg3 = resolve_llm_config({"provider": "glm"},
+                              env={"DOC2TC_PROVIDER": "minimax", "DOC2TC_API_KEY": "sk-mm-1234567890",
+                                   "DOC2TC_MODEL": "MiniMax-M3"})
+    assert cfg3.base_url == "https://api.minimaxi.com/v1" and cfg3.model == "MiniMax-M3"
+    # custom 走专属槽
+    cfg4 = resolve_llm_config({"provider": "custom", "api_key:custom": "sk-c-1234567890",
+                               "base_url:custom": "https://gw/v1", "style:custom": "anthropic",
+                               "model:custom": "m1"}, env={})
+    assert (cfg4.base_url, cfg4.style, cfg4.model) == ("https://gw/v1", "anthropic", "m1")
+    for bad_settings, needle in (
+            ({"provider": "deepseek"}, "DeepSeek"),                    # 缺 Key 带厂商名
+            ({"provider": "custom", "api_key:custom": "sk-c-1234567890"}, "Base URL"),  # custom 缺 url
+            ({"provider": "nope"}, "未知厂商")):                       # 未知厂商
+        try:
+            resolve_llm_config(bad_settings, env={})
+            raise AssertionError("应当抛 ProviderError")
+        except ProviderError as e:
+            assert needle in str(e), str(e)
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -254,5 +286,6 @@ if __name__ == "__main__":
     check("llm 模型回复 JSON 提取", t_extract_json)
     check("providers 注册表完整性", t_providers_registry)
     check("providers 老配置迁移(纯函数)", t_providers_migrate)
+    check("providers 配置组装 resolve_llm_config", t_resolve_llm_config)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)

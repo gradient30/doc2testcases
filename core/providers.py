@@ -80,3 +80,37 @@ def migrate_legacy_settings(raw: dict) -> dict:
         if raw.get("model"):
             out[f"model:{provider}"] = raw["model"]
     return out
+
+
+def resolve_llm_config(settings: dict, env: Mapping[str, str] | None = None) -> LLMConfig:
+    """settings（store.settings_all 形状）+ 环境变量 -> LLMConfig。优先级：env > settings 槽 > 预设默认。"""
+    env = os.environ if env is None else env
+
+    def _e(name: str) -> str:
+        return (env.get(name) or "").strip()
+
+    provider = (_e("DOC2TC_PROVIDER") or settings.get("provider") or "glm").strip().lower()
+    if provider not in PROVIDERS:
+        raise ProviderError(f"未知厂商 {provider!r}，可选: {'/'.join(PROVIDERS)}")
+    api_key = _e("DOC2TC_API_KEY") or settings.get(f"api_key:{provider}", "")
+    model = _e("DOC2TC_MODEL") or settings.get(f"model:{provider}", "")
+    if provider == "custom":
+        base_url = _e("DOC2TC_BASE_URL") or settings.get("base_url:custom", "")
+        style = _e("DOC2TC_STYLE") or settings.get("style:custom", "openai")
+        if not base_url:
+            raise ProviderError("自定义端点缺少 Base URL：请在「设置」中补全")
+        if not model:
+            raise ProviderError("自定义端点缺少模型名：请在「设置」中补全")
+    else:
+        p = PROVIDERS[provider]
+        base_url, style = p["base_url"], p["style"]
+        model = model or p["default_model"]
+    if not api_key:
+        p = PROVIDERS[provider]
+        hint = f"（获取 Key: {p['key_url']}）" if p.get("key_url") else ""
+        raise ProviderError(f"未配置 {p['label']} 的 API Key：请在「设置」中保存{hint}"
+                            f"（CLI 可用环境变量 DOC2TC_API_KEY）")
+    try:
+        return LLMConfig(api_key=api_key, base_url=base_url, model=model, style=style)
+    except ValueError as e:  # pydantic ValidationError
+        raise ProviderError(f"模型配置无效: {e}") from e
