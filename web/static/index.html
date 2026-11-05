@@ -35,6 +35,11 @@ button.link.danger { color: var(--err); }
 .file-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--brand-weak);
              color: var(--brand); border-radius: 14px; padding: 3px 6px 3px 12px; font-size: 13px; }
 .file-chip .x { cursor: pointer; font-weight: 700; padding: 0 6px; border-radius: 50%; }
+.fmt-pick { font-size: 13px; color: var(--muted); }
+.fmt-opts { display: inline-flex; gap: 12px; flex-wrap: wrap; margin-left: 6px; }
+.fmt-opts label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+                  color: var(--text); cursor: pointer; user-select: none; }
+.fmt-opts input[type="checkbox"] { width: auto; padding: 0; accent-color: var(--brand); }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 select, input { font: inherit; padding: 6px 10px; border: 1px solid var(--line);
                 border-radius: 7px; background: #fff; color: var(--text); }
@@ -148,6 +153,15 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
           <option value="0">0 轮（仅生成+评审结论，不修订）</option>
         </select>
       </label>
+      <span class="fmt-pick">输出格式
+        <span class="fmt-opts" id="fmtOpts">
+          <label><input type="checkbox" value="xls" checked> Excel</label>
+          <label><input type="checkbox" value="yaml"> YAML</label>
+          <label><input type="checkbox" value="json"> JSON</label>
+          <label><input type="checkbox" value="md"> Markdown</label>
+          <label><input type="checkbox" value="xmind"> XMind</label>
+        </span>
+      </span>
       <button class="primary" id="btnStart">开始生成</button>
       <span id="startHint" style="color:var(--muted);font-size:12.5px"></span>
     </div>
@@ -402,9 +416,12 @@ function renderPicked() {
 }
 $("#btnStart").onclick = async () => {
   if (!picked.length) { alert("请先选择文档"); return; }
+  const fmts = [...document.querySelectorAll("#fmtOpts input:checked")].map(c => c.value);
+  if (!fmts.length) { alert("请至少选择一种输出格式"); return; }
   const fd = new FormData();
   picked.forEach(p => fd.append("files", p.file, p.name));
   fd.append("rounds", $("#rounds").value);
+  fd.append("formats", fmts.join(","));
   $("#btnStart").disabled = true; $("#btnStart").textContent = "上传中…";
   try {
     const r = await fetch("/api/jobs", { method: "POST", body: fd });
@@ -449,9 +466,13 @@ function jobProgress(j) {
 function jobCard(j) {
   const running = j.running || j.status === "running" || j.status === "queued";
   const render = j.render || {};
-  const dl = Object.keys(FMT_LABEL).map(fmt => {
-    const ok = (render.files || []).includes(fmt);
-    return `<a class="${ok ? "" : "disabled"}" href="/api/jobs/${j.id}/download/${fmt}">⬇ ${FMT_LABEL[fmt]}</a>`;
+  const files = render.files || [];
+  // 只展示该任务请求的格式（老任务无 formats 参数 -> 展示实际产物/全部五项）
+  const wanted = j.params?.formats?.length ? j.params.formats
+               : (files.length ? files : Object.keys(FMT_LABEL));
+  const dl = wanted.map(fmt => {
+    const ok = files.includes(fmt);
+    return `<a class="${ok ? "" : "disabled"}" href="/api/jobs/${j.id}/download/${fmt}">⬇ ${FMT_LABEL[fmt] || fmt}</a>`;
   }).join("");
   const renderBadge = render.files && render.files.length
     ? (render.ok ? '<span class="mini m-ok">回读校验通过</span>'
@@ -525,6 +546,7 @@ function bindActions() {
 /* ---------------- 实时日志（面板打开才轮询；关闭即停，服务端无订阅者零开销） ---------------- */
 let logEntries = [], logFilter = "all", logLastSeq = 0, logTimer = null;
 async function pollLogs(first) {
+  if (first) { logEntries = []; logLastSeq = 0; }   // 重开面板：重建全量，避免重复追加
   try {
     const d = await (await fetch(`/api/logs?after=${first ? 0 : logLastSeq}`)).json();
     if (d.entries.length) {

@@ -23,6 +23,7 @@ python web/app.py
 # CLI 全流程（Key 读取顺序：环境变量 DOC2TC_API_KEY > data/doc2tc.db 保存的设置）
 python tools/doc2tc.py 文档1.docx 文档2.pdf --rounds 2 --out out
 #   切厂商：DOC2TC_PROVIDER=glm|deepseek|mimo|minimax|custom
+#   输出格式：--formats xls,md（默认全部五种）；Web 端为上传时勾选，默认仅 Excel
 #   注意：--out 相对路径是相对仓库根（BASE_DIR）解析，不是当前目录
 
 # 只重新渲染 + 回读校验（不需要 API Key）
@@ -46,17 +47,18 @@ parse_document (parsers.py)          md/pdf/docx/xlsx/xls → 结构化文本
   → 落盘 job_dir/testcases/<flat>.json   canonical JSON（续跑缓存）
   → render_all (renderer.py)         五格式渲染 + 回读校验（xls 用 xlrd 重开、
                                       yaml/json 解析、md 行数、xmind 解包查 topic 树），
-                                      校验不过的格式不出现在 report.files（Web 端不可下载）
+                                      校验不过的格式不出现在 report.files（Web 端不可下载）；
+                                      formats 子集只渲染指定格式（None=全部，历史行为不变）
 ```
 
 编排者是 `core/jobs.py: process_job`：文档级循环 + 阶段机（queued → parsing → generating → reviewing → rendering → done/failed）。单文档 ParseError/LLMError 只标记该文档 failed，不影响其它文档继续。持久化与 HTTP 均不在 jobs 内——由调用方经 `on_update` 回调写库、经 `cancel_check` 探针协作式取消（探针会下沉注入到 LLM 重试等待期，`AbortedError` 转为 `JobCanceled`）。
 
 ## 关键不变量（改动前必读）
 
-- **渲染逐字节一致**：`core/renderer.py` 自历史 `tools/render_all.py` 平移，渲染行为与 `out/TestCases.*` 首版产物逐字节一致（验收记录以 MD5 比对）。修改渲染函数（字段顺序、`md_cell` 转义、xmind 结构、yaml dump 参数等）必须保持字节级兼容，或明确说明这是有意的行为变更。
+- **渲染逐字节一致**：`core/renderer.py` 自历史 `tools/render_all.py` 平移，渲染行为与 `out/TestCases.*` 首版产物逐字节一致（验收记录以 MD5 比对）。修改渲染函数（字段顺序、`md_cell` 转义、xmind 结构、yaml dump 参数等）必须保持字节级兼容，或明确说明这是有意的行为变更。`render_all(formats=...)` 子集过滤只是跳过未选格式的渲染步骤，不改变任何单格式的字节输出。
 - **规格唯一门禁**：LLM 输出的唯一校验入口是 `core/schema.py`（pydantic）。`renderer` 另有一套对磁盘历史 JSON 的防御性兜底（`normalize_doc`/`normalize_case` 消费 plain dict，不走 pydantic）——两套并存是有意设计：老输入永远可渲染。规格变更只有两个入口：`core/schema.py` 与 `core/prompts.py`（改提示词即同时改两个外壳的行为）。
 - **厂商预设唯一入口**：`core/providers.py` 持有官方端点/模型清单（GLM/DeepSeek/MiMo/MiniMax + custom）、老配置迁移（`migrate_legacy_settings`）与统一组装（`resolve_llm_config`，优先级 env > settings 厂商槽 > 预设默认）；Web 与 CLI 都经它取 LLMConfig，`llm.py` 传输层不感知厂商。settings 键形如 `provider` / `model:<p>` / `api_key:<p>` / `base_url:custom` / `style:custom`，明文 Key 永不出现在 API 响应里。
-- **LLM 错误分类**（`core/llm.py`）：`_RetryableLLMError`（限流 429、5xx、网络错误、并发占线 3009、额度窗口 1005、WAF 风控 3012）按 `retry_interval_s`（默认 60s）自动重试至多 `max_api_retries` 次；其余（401/403 鉴权、其它业务码、响应结构异常）抛硬 `LLMError`。**HTTP 200 内包业务错误封套 `{code, msg}` 必须识别为错误**，不得当成空成功——这是真实端到端踩过的坑，有回归测试（`t_llm_business_envelope`）。
+- **LLM 错误分类**（`core/llm.py`）：`_RetryableLLMError`（限流 429、5xx、网络错误、并发占线 3009、额度窗口 1005、WAF 风控 3012）按 `retry_interval_s`（默认 60s）自动重试至多 `max_api_retries` 次；其余（401/403 鉴权、其它业务码、响应结构异常）抛硬 `LLMError`。**HTTP 200 内包业务错误封套 `{code, msg}` 必须识别为错误**，不得当成空成功——这是真实端到端踩过的坑，有回归测试（`t_llm_business_envelope`）。**输出截断**（openai `finish_reason=length` / anthropic `stop_reason=max_tokens`）抛 `OutputTruncatedError`，`chat()` 自动翻倍 `max_tokens` 立即重试（封顶 65536、最多 3 次升级，`t_llm_truncation_retry`）；`chat_json` 提取失败时把模型回复首尾片段写入 logbus（真实失败原因在日志面板可见）。
 - **传输降级链**：requests → urllib → （仅当 WAF 按 TLS 指纹拦截，即 403/405 且含 3012/unusual activity）降级系统 curl。普通端点永远走 requests。
 - **续跑复用**：`process_job(resume=True)` 时 `job_dir/testcases/<flat>.json` 已存在且能通过校验的文档直接复用（Web 的「重试续跑」）；`fresh=true` 则删缓存重生成。进程重启后 `Store.recover_on_startup` 把 queued/running 任务标记 interrupted。
 - **Shell 不含业务逻辑**：`web/app.py` 只做 HTTP 与任务生命周期（后台线程 + `_RUNNING` 注册表 + SSE 按 store version 轮询推送）；`tools/doc2tc.py` 只做参数解析与终端输出。新功能先进内核，外壳只接线。

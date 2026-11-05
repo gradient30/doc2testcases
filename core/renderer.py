@@ -309,8 +309,20 @@ class RenderReport:
         return f"all OK: {self.documents} documents / {self.cases} cases"
 
 
-def render_all(docs: list[dict], out_dir: Path, base_name: str = "TestCases") -> RenderReport:
-    """渲染 + 校验主入口。docs 为 normalize_doc 之后的 plain dict 列表。"""
+def render_all(docs: list[dict], out_dir: Path, base_name: str = "TestCases",
+               formats: list[str] | tuple[str, ...] | set[str] | None = None) -> RenderReport:
+    """渲染 + 校验主入口。docs 为 normalize_doc 之后的 plain dict 列表。
+
+    formats=None 渲染全部五格式（历史行为，字节级不变）；传入子集只渲染指定格式
+    （仅跳过未选格式的步骤，单格式渲染逻辑零改动）。未知/空格式显式报错。
+    """
+    wanted = set(formats) if formats is not None else None
+    if wanted is not None:
+        unknown = wanted - set(FORMATS)
+        if unknown:
+            raise RenderError(f"未知格式: {', '.join(sorted(unknown))}（可选: {', '.join(FORMATS)}）")
+        if not wanted:
+            raise RenderError("至少需要一种输出格式")
     out_dir.mkdir(parents=True, exist_ok=True)
     steps = [
         ("xls", render_xls, out_dir / f"{base_name}.xls", verify_xls),
@@ -321,6 +333,8 @@ def render_all(docs: list[dict], out_dir: Path, base_name: str = "TestCases") ->
     ]
     report = RenderReport(ok=False)
     for name, render, path, verify in steps:
+        if wanted is not None and name not in wanted:
+            continue
         try:
             render(docs, path)
         except Exception as e:  # noqa: BLE001

@@ -6,6 +6,7 @@
 
 - 生成质量：每份用例集经「独立评审 → 有界修订（默认 2 轮）」循环，评审意见与假设在结果中显式呈现，不做黑盒；
 - 规格唯一：用例 JSON 结构由 pydantic 契约（`core/schema.py`）门禁，渲染前回读校验（xls 用 xlrd 重开、yaml/json 解析、md 行数核对、xmind 压缩包解析），校验不过不提供下载；
+- 输出可选：Web 上传时勾选输出格式（**默认仅 Excel**，可多选五种），CLI 用 `--formats`；只渲染所选格式，单格式产物与全量输出逐字节一致；
 - 可靠性：任务 SQLite 持久化，进程重启自动标记断点、已完成文档续跑复用；限流/并发占线每 60 秒自动重试；单文档失败不影响其它文档。
 
 本仓库首版产物由 ZCode 动态工作流生成（4 份文档 → 114 条用例，见 `out/`），现已演化为可独立运行的双外壳工具。
@@ -24,6 +25,7 @@ python web/app.py          # → http://127.0.0.1:8787/
 export DOC2TC_API_KEY=sk-xxx    # 或先在 Web 里保存过 Key
 python tools/doc2tc.py 需求文档1.docx 需求文档2.pdf --rounds 2 --out out
 #   切厂商：DOC2TC_PROVIDER=deepseek|mimo|minimax|glm|custom（缺省读已保存设置）
+#   输出格式：--formats xls,xmind（默认全部五种）
 
 # 只重新渲染（不需要 API Key）：
 python tools/render_all.py out/testcases out
@@ -87,7 +89,7 @@ python tests/test_core.py
 | --- | --- | --- |
 | GET | `/api/providers` | 厂商预设清单 + 各厂商 Key 配置状态 |
 | POST | `/api/test` | 用对话框当前值真实调用一次当前模型（连通性测试） |
-| POST | `/api/jobs` | multipart 上传文件（`files` + `rounds`）创建任务 |
+| POST | `/api/jobs` | multipart 上传文件（`files` + `rounds` + `formats`，输出格式默认 `xls`、可多选）创建任务 |
 | GET | `/api/jobs` / `/api/jobs/{id}` | 任务列表 / 详情（含逐文档状态与评审意见） |
 | GET | `/api/jobs/{id}/events` | SSE 实时事件 |
 | POST | `/api/jobs/{id}/cancel` · `/retry?fresh=true` | 取消 · 续跑/重新生成 |

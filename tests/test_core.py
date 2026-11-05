@@ -407,6 +407,27 @@ def t_logbus():
     logbus.reset()
 
 
+def t_render_formats():
+    """render_all formats 子集：只渲染指定格式（其余文件不存在）；未知/空格式显式报错。"""
+    from core.renderer import RenderError, load_documents, render_all
+    tmp = Path(tempfile.mkdtemp(prefix="d2t_fmt_"))
+    try:
+        docs = load_documents(BASE / "out" / "testcases")
+        rep = render_all(docs, tmp / "sub", formats=["xls", "md"])
+        assert rep.ok, rep.failures
+        assert set(rep.files) == {"xls", "md"} and rep.cases == 114
+        assert (tmp / "sub" / "TestCases.xls").is_file()
+        assert not (tmp / "sub" / "TestCases.json").exists()
+        for bad in (["xls", "txt"], []):
+            try:
+                render_all(docs, tmp / "bad", formats=bad)
+                raise AssertionError(f"formats={bad} 应当报错")
+            except RenderError:
+                pass
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -415,6 +436,7 @@ if __name__ == "__main__":
     check("schema 合法样本", t_schema_ok)
     check("schema 非法样本全部被拒", t_schema_bad)
     check("渲染五格式 + 回读校验(114例)", t_render_roundtrip)
+    check("渲染 formats 子集过滤", t_render_formats)
     check("store 持久化/恢复标记/设置", t_store_and_recover)
     check("jobs 无 LLM 解析失败路径", t_job_parse_failure)
     check("llm 取消即时响应(不睡满间隔)", t_llm_abort_responsive)

@@ -104,7 +104,9 @@ def _worker(job_id: str, *, resume: bool, fresh: bool) -> None:
     if job is None:
         return
     files = sorted(( _job_dir(job_id) / "uploads").glob("*"))
-    rounds = int(job.get("params", {}).get("rounds", 2))
+    params = job.get("params", {})
+    rounds = int(params.get("rounds", 2))
+    formats = params.get("formats")          # 老任务无此键 -> None -> 全部五格式
     cancel = threading.Event()
     with _REGISTRY_LOCK:
         _RUNNING[job_id] = {"cancel": cancel}
@@ -112,6 +114,7 @@ def _worker(job_id: str, *, resume: bool, fresh: bool) -> None:
         store.update_job(job_id, status="running", error="")
         logbus.log("info", "web", f"任务 {job_id} 启动"
                     f"（{len(files)} 份文档，修订≤{rounds} 轮，"
+                    f"输出 {'、'.join(formats) if formats else '五格式'}，"
                     f"{'重新生成' if fresh else '续跑' if resume else '新任务'}）")
 
         def on_update(docs, _stage):
@@ -121,7 +124,8 @@ def _worker(job_id: str, *, resume: bool, fresh: bool) -> None:
             shutil.rmtree(_job_dir(job_id) / "testcases", ignore_errors=True)
         outcome = process_job(files, _llm_config(), rounds=rounds,
                               job_dir=_job_dir(job_id), on_update=on_update,
-                              cancel_check=cancel.is_set, resume=resume)
+                              cancel_check=cancel.is_set, resume=resume,
+                              formats=formats)
         status = "done" if outcome.ok else "failed"
         store.update_job(job_id, status=status,
                          docs=[d.to_dict() for d in outcome.docs],
@@ -275,13 +279,19 @@ def _settings_view(s: dict) -> dict:
 
 
 @app.post("/api/jobs")
-async def create_job(files: list[UploadFile] = File(...), rounds: int = Form(default=-1)) -> dict:
+async def create_job(files: list[UploadFile] = File(...), rounds: int = Form(default=-1),
+                     formats: str = Form(default="xls")) -> dict:
     if not files:
         raise HTTPException(400, "请至少上传一份文档")
     bad = [f.filename for f in files
            if not f.filename or Path(f.filename).suffix.lower() not in SUPPORTED_EXTS]
     if bad:
         raise HTTPException(400, f"不支持的格式: {', '.join(bad)}（支持 md/pdf/docx/xlsx/xls）")
+    fmt_list = [f.strip().lower() for f in formats.split(",") if f.strip()]
+    bad_fmt = [f for f in fmt_list if f not in FORMATS]
+    if not fmt_list or bad_fmt:
+        raise HTTPException(400, f"未知输出格式: {', '.join(bad_fmt) or '（空）'}"
+                                 f"（可选 {', '.join(FORMATS)}）")
     _llm_config()  # 提前校验 Key，避免任务建好才失败
     job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     up_dir = _job_dir(job_id) / "uploads"
@@ -293,7 +303,7 @@ async def create_job(files: list[UploadFile] = File(...), rounds: int = Form(def
         names.append(target.name)
     if rounds < 0:   # 未传时用设置默认；显式 0（仅生成+评审结论）合法保留
         rounds = int(store.settings_all().get("rounds", 2))
-    store.create_job(job_id, params={"rounds": rounds, "files": names})
+    store.create_job(job_id, params={"rounds": rounds, "files": names, "formats": fmt_list})
     _start_worker(job_id)
     return {"id": job_id}
 

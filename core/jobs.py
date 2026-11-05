@@ -71,11 +71,13 @@ def process_job(
     on_update: Callable[[list[DocState], str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
     resume: bool = False,
+    formats: list[str] | None = None,
 ) -> JobOutcome:
     """跑完一个任务。job_dir/testcases 存逐文档 JSON，job_dir/out 存渲染产物。
 
     on_update(docs, overall_stage) 在每次阶段变化时回调（持久化/SSE 用）。
     cancel_check 返回 True 时在文档边界/阶段边界协作式取消。
+    formats=None 渲染全部五格式；子集只渲染指定格式（render_all 语义）。
     """
     tc_dir = job_dir / "testcases"
     out_dir = job_dir / "out"
@@ -170,11 +172,13 @@ def process_job(
             if s.stage == "reviewing":
                 s.stage = "rendering"
         _emit(states, "rendering")
-        report = renderer.render_all(sorted(render_dicts, key=lambda d: d["document"]), out_dir)
+        report = renderer.render_all(sorted(render_dicts, key=lambda d: d["document"]), out_dir,
+                                     formats=formats)
         outcome.render = report
+        fmt_desc = "、".join(formats) if formats else "五格式"
         logbus.log("info" if report.ok else "error", "render",
-                   "五格式渲染" + ("完成: " + "; ".join(report.lines) if report.ok
-                                   else "失败: " + "; ".join(report.failures)))
+                   f"{fmt_desc}渲染" + ("完成: " + "; ".join(report.lines) if report.ok
+                                        else "失败: " + "; ".join(report.failures)))
         for s in states:
             if s.stage == "rendering":
                 s.stage = "done"

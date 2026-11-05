@@ -2,7 +2,7 @@
 """doc2testcases CLI 外壳：需求文档 -> 测试用例（五格式）。
 
 用法（工作目录为仓库根）:
-    python tools/doc2tc.py 文档1 [文档2 ...] [--rounds N] [--out 目录]
+    python tools/doc2tc.py 文档1 [文档2 ...] [--rounds N] [--out 目录] [--formats xls,md]
 
 厂商预设（内置 GLM/DeepSeek/MiMo/MiniMax，见 core/providers.py）:
     DOC2TC_PROVIDER=glm|deepseek|mimo|minimax|custom   # 缺省读已保存设置
@@ -20,6 +20,7 @@ sys.path.insert(0, str(BASE_DIR))
 from core.jobs import process_job  # noqa: E402
 from core.llm import LLMConfig  # noqa: E402
 from core.providers import ProviderError, resolve_llm_config  # noqa: E402
+from core.renderer import FORMATS  # noqa: E402
 from core.store import Store  # noqa: E402
 
 
@@ -36,6 +37,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="需求文档 -> 测试用例（五格式）")
     parser.add_argument("files", nargs="+", help="需求文档路径（md/pdf/docx/xlsx/xls）")
     parser.add_argument("--rounds", type=int, default=2, help="评审修订轮数上限（默认 2）")
+    parser.add_argument("--formats", default=",".join(FORMATS),
+                        help=f"输出格式逗号分隔（默认全部: {','.join(FORMATS)}）")
     parser.add_argument("--out", default="out", help="输出目录（默认 out）")
     ns = parser.parse_args()
 
@@ -44,12 +47,19 @@ def main() -> int:
     if missing:
         print(f"文件不存在: {'、'.join(str(m) for m in missing)}", file=sys.stderr)
         return 2
+    fmt_list = [f.strip().lower() for f in ns.formats.split(",") if f.strip()]
+    bad_fmt = [f for f in fmt_list if f not in FORMATS]
+    if not fmt_list or bad_fmt:
+        print(f"未知输出格式: {', '.join(bad_fmt) or '（空）'}（可选 {', '.join(FORMATS)}）",
+              file=sys.stderr)
+        return 2
 
     cfg = build_llm_config()
     out_dir = (BASE_DIR / ns.out).resolve() if not Path(ns.out).is_absolute() else Path(ns.out)
     job_dir = out_dir / ".job"
-    print(f"模型: {cfg.model} @ {cfg.base_url}（{cfg.style}），修订轮数上限 {ns.rounds}")
-    outcome = process_job(files, cfg, rounds=ns.rounds, job_dir=job_dir,
+    print(f"模型: {cfg.model} @ {cfg.base_url}（{cfg.style}），修订轮数上限 {ns.rounds}，"
+          f"输出 {'、'.join(fmt_list)}")
+    outcome = process_job(files, cfg, rounds=ns.rounds, job_dir=job_dir, formats=fmt_list,
                           on_update=lambda docs, stage: print(f"[{stage}] "
                               + "、".join(f"{d.name}:{d.stage}" for d in docs)))
 
