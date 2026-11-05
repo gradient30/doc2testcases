@@ -17,11 +17,13 @@ pip install -r requirements.txt
 
 # 方式一：Web 控制台（推荐）
 python web/app.py          # → http://127.0.0.1:8787/
-#   首次使用先点右上角「设置」保存 API Key（仅存本机 data/doc2tc.db）
+#   首次使用先点右上角「设置」：选厂商（智谱 GLM / DeepSeek / 小米 MiMo / MiniMax / 自定义）
+#   → 粘贴该家 API Key 即可（各厂 Key 分开保存，切换免重填；仅存本机 data/doc2tc.db）
 
 # 方式二：CLI
 export DOC2TC_API_KEY=sk-xxx    # 或先在 Web 里保存过 Key
 python tools/doc2tc.py 需求文档1.docx 需求文档2.pdf --rounds 2 --out out
+#   切厂商：DOC2TC_PROVIDER=deepseek|mimo|minimax|glm|custom（缺省读已保存设置）
 
 # 只重新渲染（不需要 API Key）：
 python tools/render_all.py out/testcases out
@@ -30,13 +32,13 @@ python tools/render_all.py out/testcases out
 python tests/test_core.py
 ```
 
-模型默认指向 BigModel OpenAI 兼容端点（`glm-4.6`），设置里可切换任意兼容服务（Base URL / 模型 / OpenAI 或 Anthropic 风格）。
+内置四家官方厂商预设（智谱 GLM / DeepSeek / 小米 MiMo / MiniMax，端点与最新模型清单见 `core/providers.py`，2026-11 核实），选择厂商后只需粘贴该家 Key；也可切「自定义」接任意 OpenAI / Anthropic 兼容服务。老版本已保存的配置会在读取时自动迁移，不丢 Key。
 
 ## 仓库结构
 
 | 路径 | 说明 |
 | --- | --- |
-| `core/` | **内核**：schema（规格门禁）、parsers（四格式解析）、prompts（提示词契约）、llm（多风格客户端+重试）、generator/reviewer（生成与评审修订循环）、renderer（五格式渲染+回读校验）、jobs（任务编排）、store（SQLite 持久化） |
+| `core/` | **内核**：schema（规格门禁）、parsers（四格式解析）、prompts（提示词契约）、providers（厂商预设注册表）、llm（多风格客户端+重试）、generator/reviewer（生成与评审修订循环）、renderer（五格式渲染+回读校验）、jobs（任务编排）、store（SQLite 持久化） |
 | `web/` | Web 外壳：`app.py`（FastAPI：上传/任务/SSE/下载/设置）+ `static/index.html`（单页控制台） |
 | `tools/doc2tc.py` | CLI 外壳（全流程） |
 | `tools/render_all.py` | 渲染薄壳（仅五格式渲染+校验，历史兼容入口） |
