@@ -18,8 +18,18 @@ header { display: flex; align-items: center; justify-content: space-between; mar
 h1 { font-size: 20px; margin: 0; }
 h1 small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
 .hdr-right { display: flex; align-items: center; gap: 10px; }
-.model-chip { color: var(--muted); font-size: 12px; background: var(--card);
-              border: 1px solid var(--line); padding: 3px 10px; border-radius: 12px; }
+.model-switch { font-size: 12px; color: var(--brand); background: var(--card);
+                border: 1px solid var(--line); padding: 3px 8px; border-radius: 12px;
+                max-width: 300px; cursor: pointer; }
+.help { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px;
+        border-radius: 50%; border: 1px solid var(--line); color: var(--muted); font-size: 11px;
+        cursor: help; position: relative; margin-left: 5px; user-select: none; vertical-align: -2px; }
+.help .tip { display: none; position: absolute; left: -1px; top: 22px; width: 320px;
+             background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+             box-shadow: 0 8px 30px rgba(0,0,0,.13); padding: 10px 13px; font-size: 12.5px;
+             color: var(--text); text-align: left; line-height: 1.8; z-index: 50; }
+.help .tip b { font-weight: 600; }
+.help:hover .tip, .help:focus .tip, .help.on .tip { display: block; }
 button { font: inherit; cursor: pointer; border-radius: 7px; border: 1px solid var(--line);
          background: var(--card); color: var(--text); padding: 6px 14px; }
 button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
@@ -132,7 +142,9 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
   <header>
     <h1>doc2testcases <small>需求文档 → 测试用例（xls / yaml / json / md / xmind）</small></h1>
     <div class="hdr-right">
-      <span class="model-chip" id="modelChip">—</span>
+      <select id="modelSwitch" class="model-switch" title="切换当前渠道（仅列出已配 Key 的渠道，立即生效）">
+        <option>—</option>
+      </select>
       <button id="btnLogs">📋 日志<span id="logBadge"></span></button>
       <button id="btnSettings">⚙ 设置</button>
     </div>
@@ -146,7 +158,15 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
     </div>
     <div class="files" id="fileList"></div>
     <div class="row">
-      <label>评审修订轮数
+      <label>评审修订轮数<span class="help" tabindex="0">?<span class="tip">
+        <b>轮数 = 「按评审意见修订」的上限</b>，不是固定执行次数：每轮先独立评审，
+        评审通过（或只剩低优先级意见）即提前收工，不会为凑满轮数空跑。<br>
+        <b>0 轮</b>：只生成 + 出一次评审结论，不据此修订（最快最省）<br>
+        <b>1 轮</b>：评审一次、最多修订一次，再复核确认<br>
+        <b>2 轮（推荐）</b>：多数需求文档在此收敛<br>
+        每多 1 轮最多多 2 次模型调用（评审 + 修订），耗时与费用近似线性增长；
+        轮次用尽仍有意见时，结果会如实标「仍有评审意见」并列出意见原文。
+      </span></span>
         <select id="rounds">
           <option value="1">1 轮（更快）</option>
           <option value="2" selected>2 轮（推荐）</option>
@@ -261,10 +281,40 @@ async function loadSettings() {
     applyProvider(s.provider, s);
     const label = (PROVIDER_LIST.find(p => p.id === s.provider) || {}).label || s.provider;
     const keyOk = s.keys_configured && s.keys_configured[s.provider];
-    $("#modelChip").textContent = s.model ? `${label} · ${s.model} · ${keyOk ? "Key 已配置" : "未配置 Key"}` : "—";
+    // 顶栏快速切换：只列已配 Key 的渠道（当前渠道始终保留），标签带各家当前模型
+    const sw = $("#modelSwitch");
+    sw.innerHTML = PROVIDER_LIST
+      .filter(p => (s.keys_configured && s.keys_configured[p.id]) || p.id === s.provider)
+      .map(p => {
+        const m = (s.model_by_provider && s.model_by_provider[p.id]) || p.default_model || "";
+        const mark = (s.keys_configured && s.keys_configured[p.id]) ? "" : " ·未配Key";
+        return `<option value="${esc(p.id)}">${esc(p.label)} · ${esc(m)}${mark}</option>`;
+      }).join("");
+    sw.value = s.provider;
     $("#startHint").textContent = keyOk ? "" : "先在「设置」里保存当前厂商的 API Key";
   } catch (e) { console.error(e); }
 }
+$("#modelSwitch").onchange = async () => {   // 渠道快速切换：只写 provider，新建/重试任务立即按新渠道取配置
+  const pid = $("#modelSwitch").value;
+  try {
+    const r = await fetch("/api/settings", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: pid }) });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    await loadSettings();
+    toast("已切换渠道，新建任务即生效", true);
+  } catch (e) {
+    toast(`切换失败: ${e.message || e}`, false);
+    loadSettings();
+  }
+};
+document.querySelector(".help").addEventListener("click", e => {   // 触屏兜底：点 ? 开关说明气泡
+  e.preventDefault(); e.stopPropagation();
+  e.currentTarget.classList.toggle("on");
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest(".help")) document.querySelectorAll(".help.on").forEach(h => h.classList.remove("on"));
+});
 function applyProvider(pid, s) {
   const p = PROVIDER_LIST.find(x => x.id === pid) || PROVIDER_LIST[0];
   fillModels(pid, s, p);
