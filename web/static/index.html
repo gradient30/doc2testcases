@@ -207,6 +207,7 @@ async function loadSettings() {
     PROVIDER_LIST = ps.providers; settingsCache = s;
     $("#sProvider").innerHTML = PROVIDER_LIST.map(p =>
       `<option value="${esc(p.id)}">${esc(p.label)}${p.key_configured ? " ·Key已配" : ""}</option>`).join("");
+    $("#sProvider").value = s.provider;   // 回填已保存厂商（否则下拉回落第一项，保存/测试会写错槽）
     applyProvider(s.provider, s);
     const label = (PROVIDER_LIST.find(p => p.id === s.provider) || {}).label || s.provider;
     const keyOk = s.keys_configured && s.keys_configured[s.provider];
@@ -274,6 +275,9 @@ $("#dlgTest").onclick = async () => {
   const btn = $("#dlgTest");
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>测试中…';
   $("#dlgMsg").style.display = "none";
+  // 传输层有 requests->urllib->curl 多级降级，最坏可达 ~2 分钟；35s 先行提示避免用户干等
+  const slowTimer = setTimeout(() =>
+    showMsg("⚠ 超过 35 秒仍未响应：网络不通或端点无响应，可稍后再试", false), 35000);
   try {
     const r = await fetch("/api/test", { method: "POST", headers: { "content-type": "application/json" },
                                          body: JSON.stringify(collectConfig()) });
@@ -283,6 +287,7 @@ $("#dlgTest").onclick = async () => {
   } catch (e) {
     showMsg("✗ 请求失败: " + e.message, false);
   } finally {
+    clearTimeout(slowTimer);
     btn.disabled = false; btn.textContent = "测试连接";
   }
 };

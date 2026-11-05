@@ -221,8 +221,9 @@ def test_llm(payload: dict) -> dict:
         cfg = resolve_llm_config(store.settings_all(), env)
     except ProviderError as e:
         return {"ok": False, "error": str(e)}
-    # 探测参数：正式任务的 60s×N 重试对测试按钮毫无意义，占线/限流立即如实返回
-    cfg = cfg.model_copy(update={"max_tokens": 1024, "timeout_s": 30, "max_api_retries": 0})
+    # 探测参数：正式任务的 60s×N 重试对测试按钮毫无意义，占线/限流立即如实返回。
+    # 完整重新构造（而非 model_copy）以走一遍 pydantic 校验，避免绕过 ge/le 约束的隐性风险
+    cfg = LLMConfig(**cfg.model_dump(), max_tokens=1024, timeout_s=30, max_api_retries=0)
     t0 = time.perf_counter()
     try:
         reply = chat(cfg, "You are a connectivity probe.", "Reply with exactly: OK").strip()
@@ -247,7 +248,7 @@ def _settings_view(s: dict) -> dict:
 
 
 @app.post("/api/jobs")
-async def create_job(files: list[UploadFile] = File(...), rounds: int = Form(default=0)) -> dict:
+async def create_job(files: list[UploadFile] = File(...), rounds: int = Form(default=-1)) -> dict:
     if not files:
         raise HTTPException(400, "请至少上传一份文档")
     bad = [f.filename for f in files
@@ -263,7 +264,7 @@ async def create_job(files: list[UploadFile] = File(...), rounds: int = Form(def
         target = _unique_upload_path(up_dir, f.filename or "doc")
         target.write_bytes(await f.read())
         names.append(target.name)
-    if rounds <= 0:
+    if rounds < 0:   # 未传时用设置默认；显式 0（仅生成+评审结论）合法保留
         rounds = int(store.settings_all().get("rounds", 2))
     store.create_job(job_id, params={"rounds": rounds, "files": names})
     _start_worker(job_id)

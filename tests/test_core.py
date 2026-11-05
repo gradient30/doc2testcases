@@ -237,6 +237,10 @@ def t_providers_migrate():
     # 尾斜杠也能匹配；空/新形状不迁移
     assert mig({"base_url": "https://api.deepseek.com/"}) == {"provider": "deepseek"}
     assert mig({}) == {} and mig({"provider": "glm"}) == {}
+    # 老库只存过 Key（无 base_url 行）-> 按老版默认端点（BigModel）归 glm
+    assert mig({"api_key": "sk-only-1234567890"}) == {"provider": "glm", "api_key:glm": "sk-only-1234567890"}
+    # 幂等：已存在新键时即使残留旧键也不再迁移（防迁移半途崩溃后旧值覆盖新值）
+    assert mig({"provider": "glm", "api_key": "sk-old-1234567890"}) == {}
 
 
 def t_resolve_llm_config():
@@ -299,6 +303,14 @@ def t_settings_migration():
         assert got2["provider"] == "custom" and got2["api_key:custom"] == "sk-x-1234567890"
         assert got2["base_url:custom"] == "https://gw.example/v1"
         s2.close()
+        s3 = Store(tmp / "c.db")  # 升级后首个请求就是保存：不被迁移旧值覆盖
+        with s3._lock, s3._conn:
+            s3._conn.execute("INSERT INTO settings (key, value) VALUES ('api_key', 'sk-old-1234567890')")
+        s3.settings_save({"api_key:deepseek": "sk-new-1234567890"})
+        got3 = s3.settings_all()
+        assert got3["api_key:deepseek"] == "sk-new-1234567890"
+        assert got3["api_key:glm"] == "sk-old-1234567890"  # 旧 Key 无端点行 -> 归 glm（老默认端点）
+        s3.close()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -65,9 +65,14 @@ class ProviderError(Exception):
 
 def migrate_legacy_settings(raw: dict) -> dict:
     """旧版平铺四字段（api_key/base_url/model/style）-> 新键集合。非旧形状返回 {}。"""
+    # 幂等保护：已存在新键（迁移中途崩溃残留等）时不再迁移，避免旧值覆盖新值
+    if any(k == "provider" or k.startswith(("api_key:", "model:")) for k in raw):
+        return {}
     if not any(raw.get(k) for k in _LEGACY_KEYS):
         return {}
-    provider = _BY_BASE_URL.get((raw.get("base_url") or "").rstrip("/"), "custom")
+    # base_url 缺失按老版默认端点（BigModel）归 glm：老接口允许只存 Key 不存端点
+    base = (raw.get("base_url") or "https://open.bigmodel.cn/api/paas/v4").rstrip("/")
+    provider = _BY_BASE_URL.get(base, "custom")
     out: dict = {"provider": provider}
     if provider == "custom":
         for k, nk in (("api_key", "api_key:custom"), ("base_url", "base_url:custom"),

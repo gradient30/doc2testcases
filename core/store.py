@@ -148,6 +148,7 @@ class Store:
                         (k, str(v).strip()))
 
     def settings_save(self, partial: dict) -> dict:
+        self.settings_all()   # 先完成可能的旧库迁移，避免迁移写入的旧值覆盖本次保存
         self._settings_write(partial)
         return self.settings_all()
 
