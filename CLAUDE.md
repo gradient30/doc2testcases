@@ -63,7 +63,7 @@ parse_document (parsers.py)          md/pdf/docx/xlsx/xls → 结构化文本
 
 ## 数据与目录
 
-- `data/`（gitignored）：SQLite 任务库 `doc2tc.db`（jobs + settings 两张表，明文存本机 API Key，API 返回时掩码）与 `data/jobs/<job_id>/{uploads,testcases,out}` 任务产物。
+- `data/`（gitignored）：SQLite 任务库 `doc2tc.db`（jobs + settings 两张表，明文存本机 API Key，API 响应不含 Key 任何形式——仅布尔配置状态）与 `data/jobs/<job_id>/{uploads,testcases,out}` 任务产物。
 - `out/`：首版 ZCode 工作流产出的基线（4 文档 114 用例），是渲染一致性的比对基准，勿改动。
 - `workflows/doc-to-testcases.dwf.ts`：历史 ZCode 动态工作流脚本，逻辑已收敛进 `core/`，仅作参考。
 - `samples/`：样例文档（由 `make_fixtures.py` 生成）；`giraffe-bike/`：样例项目，其 README 是四份基线输入之一。

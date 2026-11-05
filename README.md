@@ -85,12 +85,14 @@ python tests/test_core.py
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/api/providers` | 厂商预设清单 + 各厂商 Key 配置状态 |
+| POST | `/api/test` | 用对话框当前值真实调用一次当前模型（连通性测试） |
 | POST | `/api/jobs` | multipart 上传文件（`files` + `rounds`）创建任务 |
 | GET | `/api/jobs` / `/api/jobs/{id}` | 任务列表 / 详情（含逐文档状态与评审意见） |
 | GET | `/api/jobs/{id}/events` | SSE 实时事件 |
 | POST | `/api/jobs/{id}/cancel` · `/retry?fresh=true` | 取消 · 续跑/重新生成 |
 | GET | `/api/jobs/{id}/download/{xls\|yaml\|json\|md\|xmind}` | 下载（仅校验通过的格式） |
-| GET/POST | `/api/settings` | 设置（Key 掩码返回，不明文回传） |
+| GET/POST | `/api/settings` | 设置（不回传 Key，仅返回各厂商配置状态） |
 
 ## 首版产出统计（ZCode 工作流）
 
