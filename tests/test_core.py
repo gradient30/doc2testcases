@@ -206,6 +206,21 @@ def t_extract_json():
             pass
 
 
+def t_providers_registry():
+    """厂商预设注册表完整性：字段齐、default 在清单内、模型 ID 非空去重。"""
+    from core.providers import PROVIDERS
+    assert set(PROVIDERS) == {"glm", "deepseek", "mimo", "minimax", "custom"}
+    for pid, p in PROVIDERS.items():
+        assert p["label"] and p["style"] in ("openai", "anthropic")
+        assert isinstance(p["models"], list) and len(p["models"]) == len(set(p["models"]))
+        for m in p["models"]:
+            assert m.strip() == m and m, f"{pid} 模型 ID 异常: {m!r}"
+        if pid != "custom":
+            assert p["base_url"].startswith("https://")
+            assert p["default_model"] in p["models"]
+            assert p["key_url"].startswith("https://")
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -219,5 +234,6 @@ if __name__ == "__main__":
     check("llm 取消即时响应(不睡满间隔)", t_llm_abort_responsive)
     check("llm 业务错误封套处理(1005/3009 可重试)", t_llm_business_envelope)
     check("llm 模型回复 JSON 提取", t_extract_json)
+    check("providers 注册表完整性", t_providers_registry)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)
