@@ -132,9 +132,10 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
       Key 仅存本机 <code>data/doc2tc.db</code>，不会上传到任何地方。</p>
     <div class="field"><label>服务商</label>
       <select id="sProvider"></select></div>
-    <div class="field"><label>模型（下拉选择，或手动输入任意模型 ID）</label>
-      <input id="sModel" list="modelList" autocomplete="off">
-      <datalist id="modelList"></datalist></div>
+    <div class="field"><label>模型（选择内置型号，或「手动输入」任意模型 ID）</label>
+      <select id="sModelSel"></select>
+      <input id="sModelManual" placeholder="输入任意模型 ID" autocomplete="off"
+             style="display:none; margin-top:8px"></div>
     <div class="field"><label>API Key <a id="keyUrl" target="_blank" rel="noopener"
         style="float:right;font-size:12px"></a></label>
       <input type="password" id="sKey" placeholder="粘贴该厂商的 API Key" autocomplete="off"></div>
@@ -189,8 +190,7 @@ async function loadSettings() {
 }
 function applyProvider(pid, s) {
   const p = PROVIDER_LIST.find(x => x.id === pid) || PROVIDER_LIST[0];
-  $("#modelList").innerHTML = (p.models || []).map(m => `<option value="${esc(m)}">`).join("");
-  $("#sModel").value = (s.model_by_provider && s.model_by_provider[pid]) || p.default_model || "";
+  fillModels(pid, s, p);
   $("#sKey").value = "";
   $("#sKey").placeholder = p.key_configured ? "已配置（留空则不更改）" : "粘贴该厂商的 API Key";
   const ku = $("#keyUrl");
@@ -202,11 +202,34 @@ function applyProvider(pid, s) {
     $("#sStyle").value = (s.custom && s.custom.style) || "openai";
   }
 }
+function fillModels(pid, s, p) {
+  const cur = (s.model_by_provider && s.model_by_provider[pid]) || p.default_model || "";
+  const models = p.models || [];
+  $("#sModelSel").innerHTML =
+    models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("") +
+    `<option value="__manual__">手动输入…</option>`;
+  if (cur && !models.includes(cur)) {   // 当前值不在预设里（手输值/custom）：显示手动框
+    $("#sModelSel").value = "__manual__";
+    $("#sModelManual").style.display = "";
+    $("#sModelManual").value = cur;
+  } else {
+    $("#sModelSel").value = cur || "__manual__";
+    $("#sModelManual").style.display = cur ? "none" : "";
+    $("#sModelManual").value = "";
+  }
+}
+$("#sModelSel").onchange = () => {
+  const manual = $("#sModelSel").value === "__manual__";
+  $("#sModelManual").style.display = manual ? "" : "none";
+  if (manual) { $("#sModelManual").value = ""; $("#sModelManual").focus(); }
+};
 $("#sProvider").onchange = () => applyProvider($("#sProvider").value, settingsCache);
 $("#btnSettings").onclick = () => { loadSettings(); $("#dlg").showModal(); };
 $("#dlgCancel").onclick = () => $("#dlg").close();
 $("#dlgSave").onclick = async () => {
-  const body = { provider: $("#sProvider").value, model: $("#sModel").value.trim() };
+  const model = $("#sModelSel").value === "__manual__"
+    ? $("#sModelManual").value.trim() : $("#sModelSel").value;
+  const body = { provider: $("#sProvider").value, model };
   if ($("#sKey").value.trim()) body.api_key = $("#sKey").value.trim();
   if (body.provider === "custom") {
     body.base_url_custom = $("#sBase").value.trim();
