@@ -193,6 +193,14 @@ async def save_settings(payload: dict) -> dict:
         partial["base_url:custom"] = str(payload["base_url_custom"]).strip()
     if payload.get("style_custom") in ("openai", "anthropic"):
         partial["style:custom"] = payload["style_custom"]
+    if "models_custom" in payload:   # 自定义常用模型清单：数组或逗号分隔，去重保序
+        raw = payload["models_custom"]
+        items = raw if isinstance(raw, list) else str(raw).split(",")
+        clean = [m.strip() for m in items if m and str(m).strip()]
+        if clean:
+            partial["models:custom"] = ",".join(dict.fromkeys(clean))
+        else:
+            store.settings_delete_keys(["models:custom"])   # 清空（通用写入会跳过空值）
     if str(payload.get("rounds", "")).strip():
         partial["rounds"] = str(payload["rounds"]).strip()
     return _settings_view(store.settings_save(partial))
@@ -245,7 +253,8 @@ def _settings_view(s: dict) -> dict:
             "model": s.get(f"model:{provider}", ""),
             "model_by_provider": {pid: s.get(f"model:{pid}", "") for pid in PROVIDERS},
             "custom": {"base_url": s.get("base_url:custom", ""),
-                       "style": s.get("style:custom", "openai")},
+                       "style": s.get("style:custom", "openai"),
+                       "models": [m.strip() for m in s.get("models:custom", "").split(",") if m.strip()]},
             "keys_configured": {pid: bool(s.get(f"api_key:{pid}")) for pid in PROVIDERS}}
 
 

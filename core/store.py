@@ -46,6 +46,7 @@ DEFAULT_SETTINGS = {
     "api_key:custom": "",
     "base_url:custom": "",
     "style:custom": "openai",
+    "models:custom": "",   # 自定义常用模型清单（逗号分隔，UI 可管理）
 }
 
 

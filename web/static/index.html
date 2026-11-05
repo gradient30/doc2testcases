@@ -151,6 +151,10 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
       <select id="sModelSel"></select>
       <input id="sModelManual" placeholder="输入任意模型 ID" autocomplete="off"
              style="display:none; margin-top:8px"></div>
+    <div id="customModelMgr" style="display:none; margin:-6px 0 4px; font-size:12.5px">
+      <button type="button" class="link" id="btnSaveModel">＋ 把当前模型存为常用</button>
+      <button type="button" class="link danger" id="btnRemoveModel" style="display:none">移除当前常用</button>
+    </div>
     <div class="field"><label>API Key <a id="keyUrl" target="_blank" rel="noopener"
         style="float:right;font-size:12px"></a></label>
       <input type="password" id="sKey" placeholder="粘贴该厂商的 API Key" autocomplete="off"></div>
@@ -224,6 +228,7 @@ function applyProvider(pid, s) {
   if (p.key_url) { ku.href = p.key_url; ku.textContent = "获取 Key ↗"; ku.style.display = ""; }
   else ku.style.display = "none";
   $("#customFields").style.display = pid === "custom" ? "" : "none";
+  $("#customModelMgr").style.display = pid === "custom" ? "" : "none";
   if (pid === "custom") {
     $("#sBase").value = (s.custom && s.custom.base_url) || "";
     $("#sStyle").value = (s.custom && s.custom.style) || "openai";
@@ -231,7 +236,8 @@ function applyProvider(pid, s) {
 }
 function fillModels(pid, s, p) {
   const cur = (s.model_by_provider && s.model_by_provider[pid]) || p.default_model || "";
-  const models = p.models || [];
+  // custom 的下拉选项来自用户自管的常用清单，内置厂商来自静态预设
+  const models = pid === "custom" ? (s.custom && s.custom.models) || [] : (p.models || []);
   $("#sModelSel").innerHTML =
     models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("") +
     `<option value="__manual__">手动输入…</option>`;
@@ -244,11 +250,40 @@ function fillModels(pid, s, p) {
     $("#sModelManual").style.display = cur ? "none" : "";
     $("#sModelManual").value = "";
   }
+  refreshModelMgr();
+}
+function currentModelValue() {
+  return $("#sModelSel").value === "__manual__"
+    ? $("#sModelManual").value.trim() : $("#sModelSel").value;
+}
+function refreshModelMgr() {   // 「移除当前常用」仅当选中的确是常用项时出现
+  const list = (settingsCache && settingsCache.custom && settingsCache.custom.models) || [];
+  $("#btnRemoveModel").style.display = list.includes(currentModelValue()) ? "" : "none";
 }
 $("#sModelSel").onchange = () => {
   const manual = $("#sModelSel").value === "__manual__";
   $("#sModelManual").style.display = manual ? "" : "none";
   if (manual) { $("#sModelManual").value = ""; $("#sModelManual").focus(); }
+  refreshModelMgr();
+};
+$("#sModelManual").oninput = refreshModelMgr;
+$("#btnSaveModel").onclick = async () => {   // 收藏当前模型：进常用清单并设为当前
+  const cur = currentModelValue();
+  if (!cur) { showMsg("请先选择或输入一个模型", false); return; }
+  const list = (settingsCache && settingsCache.custom && settingsCache.custom.models) || [];
+  const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "custom", model: cur,
+                           models_custom: [...new Set([...list, cur])] }) });
+  if (r.ok) { await loadSettings(); showMsg(`✓ 已把「${cur}」存为常用模型`, true); }
+  else showMsg("✗ 保存失败: " + (await r.json()).detail, false);
+};
+$("#btnRemoveModel").onclick = async () => {   // 从常用清单移除（当前使用不受影响）
+  const cur = currentModelValue();
+  const list = (settingsCache && settingsCache.custom && settingsCache.custom.models) || [];
+  const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "custom", models_custom: list.filter(m => m !== cur) }) });
+  if (r.ok) { await loadSettings(); showMsg(`✓ 已从常用清单移除「${cur}」（当前使用不受影响）`, true); }
+  else showMsg("✗ 移除失败: " + (await r.json()).detail, false);
 };
 $("#sProvider").onchange = () => applyProvider($("#sProvider").value, settingsCache);
 $("#btnSettings").onclick = () => { loadSettings(); $("#dlg").showModal(); };

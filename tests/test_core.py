@@ -112,9 +112,11 @@ def t_store_and_recover():
         job = s.get_job("j1")
         assert job["status"] == "interrupted" and "重试" in job["error"]
         # 设置读写：新键集（厂商分槽）
-        s.settings_save({"api_key:glm": "sk-test-1234567890", "model:glm": "glm-5.3"})
+        s.settings_save({"api_key:glm": "sk-test-1234567890", "model:glm": "glm-5.3",
+                         "models:custom": "m1, m2"})
         saved = s.settings_all()
         assert saved["api_key:glm"].startswith("sk-test")  # Store 层保存的是明文本体
+        assert saved["models:custom"] == "m1, m2"          # custom 常用模型清单（逗号分隔）
         s.close()
         s2 = Store(tmp / "t.db")                       # 重开数据库数据仍在
         assert s2.get_job("j1")["params"]["rounds"] == 2
