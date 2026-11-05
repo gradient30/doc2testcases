@@ -168,8 +168,10 @@ def _chat_once(cfg: LLMConfig, system: str, user: str) -> str:
         headers = {"content-type": "application/json", "x-api-key": cfg.api_key,
                    "authorization": f"Bearer {cfg.api_key}",
                    "anthropic-version": "2023-06-01"}
+        # 显式非流式：部分网关默认返回 SSE 流，客户端按整块 JSON 解析会失败
         payload: dict[str, Any] = {"model": cfg.model, "max_tokens": cfg.max_tokens,
                                    "temperature": cfg.temperature, "system": system,
+                                   "stream": False,
                                    "messages": [{"role": "user", "content": user}]}
         data = _post(url, headers, payload, cfg.timeout_s)
         try:
@@ -181,6 +183,7 @@ def _chat_once(cfg: LLMConfig, system: str, user: str) -> str:
     url = f"{base}/chat/completions"
     headers = {"content-type": "application/json", "authorization": f"Bearer {cfg.api_key}"}
     payload = {"model": cfg.model, "max_tokens": cfg.max_tokens, "temperature": cfg.temperature,
+               "stream": False,
                "messages": [{"role": "system", "content": system},
                             {"role": "user", "content": user}]}
     data = _post(url, headers, payload, cfg.timeout_s)
