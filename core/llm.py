@@ -17,6 +17,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import logbus
+
 
 class LLMError(Exception):
     """LLM 调用失败（网络/鉴权/限流/超时/响应异常）。"""
@@ -156,6 +158,8 @@ def chat(cfg: LLMConfig, system: str, user: str) -> str:
             attempt += 1
             print(f"[llm] 可重试错误，{cfg.retry_interval_s}s 后第 {attempt}/{cfg.max_api_retries} 次重试: {e}",
                   file=sys.stderr, flush=True)
+            logbus.log("warn", "llm", f"可重试错误，{cfg.retry_interval_s}s 后"
+                        f"第 {attempt}/{cfg.max_api_retries} 次重试: {e}")
             time.sleep(cfg.retry_interval_s)
 
 

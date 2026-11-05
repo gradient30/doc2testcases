@@ -321,6 +321,41 @@ def t_settings_migration():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def t_logbus():
+    """日志总线：seq 递增、增量拉取、maxlen 淘汰最旧、并发 append 不丢不乱。"""
+    import threading as _th
+    from core import logbus
+    logbus.reset()
+    logbus.log("info", "t", "a")
+    logbus.log("warn", "t", "b")
+    logbus.log("error", "t", "c")
+    all3 = logbus.tail()
+    assert [e["level"] for e in all3] == ["info", "warn", "error"]
+    assert all3[0]["seq"] < all3[1]["seq"] < all3[2]["seq"]
+    assert logbus.tail(after_seq=all3[0]["seq"]) == all3[1:]      # 增量拉取
+    assert logbus.tail(after_seq=all3[-1]["seq"]) == []           # 无新增
+    logbus.log("bogus", "t", "x")                                  # 非法级别归 info
+    assert logbus.tail()[-1]["level"] == "info"
+    for i in range(logbus._MAX_ENTRIES + 50):                      # 环形淘汰最旧
+        logbus.log("info", "t", f"m{i}")
+    kept = logbus.tail(limit=10 ** 9)
+    assert len(kept) == logbus._MAX_ENTRIES and kept[0]["msg"] == "m50"
+
+    def _hammer():
+        for _ in range(200):
+            logbus.log("info", "t", "h")
+
+    logbus.reset()                                                 # 并发 append 不丢不重
+    ts = [_th.Thread(target=_hammer) for _ in range(4)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    got = logbus.tail(limit=10 ** 9)
+    assert len(got) == 800
+    seqs = [e["seq"] for e in got]
+    assert seqs == sorted(seqs) and len(set(seqs)) == 800
+    logbus.reset()
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -338,5 +373,6 @@ if __name__ == "__main__":
     check("providers 老配置迁移(纯函数)", t_providers_migrate)
     check("providers 配置组装 resolve_llm_config", t_resolve_llm_config)
     check("settings 老库迁移落库", t_settings_migration)
+    check("logbus 环形缓冲/增量/并发", t_logbus)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)

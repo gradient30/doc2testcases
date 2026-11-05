@@ -26,6 +26,7 @@ import sys
 
 sys.path.insert(0, str(BASE_DIR))
 
+from core import logbus  # noqa: E402
 from core.jobs import JobCanceled, process_job  # noqa: E402
 from core.llm import LLMConfig  # noqa: E402
 from core.parsers import SUPPORTED_EXTS  # noqa: E402
@@ -109,6 +110,9 @@ def _worker(job_id: str, *, resume: bool, fresh: bool) -> None:
         _RUNNING[job_id] = {"cancel": cancel}
     try:
         store.update_job(job_id, status="running", error="")
+        logbus.log("info", "web", f"任务 {job_id} 启动"
+                    f"（{len(files)} 份文档，修订≤{rounds} 轮，"
+                    f"{'重新生成' if fresh else '续跑' if resume else '新任务'}）")
 
         def on_update(docs, _stage):
             store.update_job(job_id, docs=[d.to_dict() for d in docs])
@@ -122,12 +126,17 @@ def _worker(job_id: str, *, resume: bool, fresh: bool) -> None:
         store.update_job(job_id, status=status,
                          docs=[d.to_dict() for d in outcome.docs],
                          render=_render_payload(outcome.render), error=outcome.error)
+        logbus.log("info" if outcome.ok else "warn", "web",
+                   f"任务 {job_id} 结束（{status}）" + (f": {outcome.error}" if outcome.error else ""))
     except JobCanceled:
         store.update_job(job_id, status="canceled", error="已取消（已完成文档可续跑复用）")
+        logbus.log("warn", "web", f"任务 {job_id} 已取消（已完成文档可续跑复用）")
     except HTTPException as e:   # 设置缺 Key 等
         store.update_job(job_id, status="failed", error=str(e.detail))
+        logbus.log("error", "web", f"任务 {job_id} 失败: {e.detail}")
     except Exception as e:  # noqa: BLE001
         store.update_job(job_id, status="failed", error=f"内部错误: {e}")
+        logbus.log("error", "web", f"任务 {job_id} 内部错误: {e}")
     finally:
         with _REGISTRY_LOCK:
             _RUNNING.pop(job_id, None)
@@ -149,6 +158,13 @@ def _is_running(job_id: str) -> bool:
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB_DIR / "static" / "index.html")
+
+
+@app.get("/api/logs")
+def get_logs(after: int = 0) -> dict:
+    """实时日志增量拉取（内存环形缓冲，进程重启清空）。"""
+    entries = logbus.tail(after_seq=after)
+    return {"entries": entries, "last_seq": entries[-1]["seq"] if entries else after}
 
 
 @app.get("/api/health")

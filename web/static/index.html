@@ -101,6 +101,21 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
 .toast.t-ok  { background: var(--ok-weak); color: var(--ok); }
 .toast.t-err { background: var(--err-weak); color: var(--err); }
 .toast.out { opacity: 0; transform: translateY(-8px); }
+#btnLogs { position: relative; }
+#logBadge { position: absolute; top: -7px; right: -7px; min-width: 16px; height: 16px;
+            line-height: 16px; border-radius: 9px; background: var(--err); color: #fff;
+            font-size: 11px; padding: 0 4px; display: none; }
+#logDlg { width: min(880px, 94vw); }
+.log-bar { display: flex; align-items: center; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.log-bar button { padding: 3px 12px; font-size: 12.5px; }
+.log-bar button.on { background: var(--brand-weak); color: var(--brand); border-color: var(--brand); }
+.log-bar label { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+.log-list { font: 12px/1.75 Consolas, "Courier New", monospace; background: #fafbfc;
+            border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+            height: 400px; overflow-y: auto; margin-top: 10px; white-space: pre-wrap; word-break: break-all; }
+.log-list .lv-info  { color: var(--muted); }
+.log-list .lv-warn  { color: var(--warn); }
+.log-list .lv-error { color: var(--err); font-weight: 600; }
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--brand);
         border-top-color: transparent; border-radius: 50%; animation: rot .8s linear infinite;
         vertical-align: -2px; margin-right: 4px; }
@@ -113,6 +128,7 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
     <h1>doc2testcases <small>需求文档 → 测试用例（xls / yaml / json / md / xmind）</small></h1>
     <div class="hdr-right">
       <span class="model-chip" id="modelChip">—</span>
+      <button id="btnLogs">📋 日志<span id="logBadge"></span></button>
       <button id="btnSettings">⚙ 设置</button>
     </div>
   </header>
@@ -174,6 +190,22 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
       <button type="button" class="primary" id="dlgSave">保存</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="logDlg">
+  <div class="dlg-body">
+    <h3>运行日志 <small style="color:var(--muted);font-weight:400">实时 · 进程重启后清空</small></h3>
+    <div class="log-bar">
+      <button data-lv="all" class="on">全部</button>
+      <button data-lv="info">INFO</button>
+      <button data-lv="warn">WARN</button>
+      <button data-lv="error">ERROR</button>
+      <button type="button" id="logClear" style="margin-left:8px">清屏</button>
+      <label><input type="checkbox" id="logAutoScroll" checked> 自动滚动</label>
+    </div>
+    <div id="logList" class="log-list"></div>
+    <div class="dlg-foot"><button type="button" class="primary" id="logClose">关闭</button></div>
+  </div>
 </dialog>
 
 <script>
@@ -464,6 +496,7 @@ async function refresh(now) {
                                             : '<div class="empty">暂无任务</div>';
     bindActions();
   } catch (e) { /* 服务重启中 */ }
+  if (hasRunning) pollLogs(false);   // 任务运行时顺带增量拉日志（面板关着仅更新徽章，不渲染）
 }
 function bindActions() {
   document.querySelectorAll("button[data-act]").forEach(b => b.onclick = async () => {
@@ -489,6 +522,49 @@ function bindActions() {
     refresh(true);
   });
 }
+/* ---------------- 实时日志（面板打开才轮询；关闭即停，服务端无订阅者零开销） ---------------- */
+let logEntries = [], logFilter = "all", logLastSeq = 0, logTimer = null;
+async function pollLogs(first) {
+  try {
+    const d = await (await fetch(`/api/logs?after=${first ? 0 : logLastSeq}`)).json();
+    if (d.entries.length) {
+      logEntries.push(...d.entries);
+      logLastSeq = d.last_seq;
+      if (logEntries.length > 1500) logEntries = logEntries.slice(-1000);   // 前端也封顶
+      if ($("#logDlg").open) renderLogs();
+    }
+    updateLogBadge();
+  } catch (e) { /* 服务重启中 */ }
+}
+function renderLogs() {
+  const keep = logFilter === "all" ? logEntries : logEntries.filter(e => e.level === logFilter);
+  const el = $("#logList");
+  el.innerHTML = keep.map(e => {
+    const t = new Date(e.ts * 1000).toLocaleTimeString("zh-CN", { hour12: false });
+    return `<div class="lv-${esc(e.level)}">${t} ${e.level.toUpperCase().padEnd(5, " ")} [${esc(e.tag)}] ${esc(e.msg)}</div>`;
+  }).join("");
+  if ($("#logAutoScroll").checked) el.scrollTop = el.scrollHeight;
+}
+function updateLogBadge() {
+  const errs = logEntries.filter(e => e.level === "error").length;
+  const b = $("#logBadge");
+  b.style.display = errs ? "block" : "none";
+  b.textContent = errs > 99 ? "99+" : errs;
+}
+function startLogPolling() { stopLogPolling(); logTimer = setInterval(() => pollLogs(false), 1500); }
+function stopLogPolling() { if (logTimer) { clearInterval(logTimer); logTimer = null; } }
+$("#btnLogs").onclick = () => { pollLogs(true).then(renderLogs); $("#logDlg").showModal(); startLogPolling(); };
+$("#logDlg").addEventListener("close", stopLogPolling);
+$("#logClose").onclick = () => $("#logDlg").close();
+$("#logClear").onclick = () => { logEntries = []; renderLogs(); updateLogBadge(); };
+$("#logAutoScroll").onchange = renderLogs;
+document.querySelectorAll(".log-bar button[data-lv]").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".log-bar button[data-lv]").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  logFilter = b.dataset.lv;
+  renderLogs();
+});
+
 let hasRunning = false;
 setInterval(() => {
   const running = jobsCache.some(j => j.running || j.status === "running" || j.status === "queued");

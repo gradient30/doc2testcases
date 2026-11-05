@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import renderer
+from . import logbus, renderer
 from .llm import AbortedError, LLMConfig, LLMError
 from .parsers import ParseError, parse_document
 from .reviewer import PipelineResult, ReviewError, run_pipeline
@@ -106,6 +106,7 @@ def process_job(
                 st.stage, st.module, st.counts, st.notes = "done", cs.module, cs.counts(), cs.notes
                 st.approved, st.reused = True, True
                 render_dicts.append(cs.to_render_dict())
+                logbus.log("info", "jobs", f"[{st.name}] 续跑复用已有结果")
                 _emit(states, "generating")
                 continue
             except Exception:  # noqa: BLE001 缓存损坏则重跑
@@ -114,11 +115,13 @@ def process_job(
             raise JobCanceled()
         # 解析
         st.stage = "parsing"
+        logbus.log("info", "jobs", f"[{st.name}] 解析文档…")
         _emit(states, "parsing")
         try:
             parsed = parse_document(f)
         except ParseError as e:
             st.stage, st.error = "failed", str(e)
+            logbus.log("error", "jobs", f"[{st.name}] 解析失败: {e}")
             _emit(states, "parsing")
             continue
         st.fmt = parsed.fmt
@@ -126,6 +129,7 @@ def process_job(
             raise JobCanceled()
         # 生成 + 评审修订循环
         st.stage = "generating"
+        logbus.log("info", "jobs", f"[{st.name}] LLM 生成用例（{llm_cfg.model} @ {llm_cfg.base_url}）")
         _emit(states, "generating")
         try:
             result: PipelineResult = run_pipeline(llm_cfg, parsed, rounds=rounds)
@@ -133,10 +137,12 @@ def process_job(
             raise JobCanceled() from e
         except (LLMError, ReviewError) as e:
             st.stage, st.error = "failed", f"LLM 调用失败: {e}"
+            logbus.log("error", "jobs", f"[{st.name}] 生成失败: {e}")
             _emit(states, "generating")
             continue
         except Exception as e:  # noqa: BLE001
             st.stage, st.error = "failed", str(e)
+            logbus.log("error", "jobs", f"[{st.name}] 生成异常: {e}")
             _emit(states, "generating")
             continue
         cs = result.caseset
@@ -145,6 +151,9 @@ def process_job(
         st.approved, st.rounds = result.approved, result.rounds
         st.findings = [f.model_dump() for f in result.open_findings]
         st.reviews_log = [len(r.findings) for r in result.reviews]
+        logbus.log("info", "jobs", f"[{st.name}] {result.rounds} 轮评审"
+                    f"{'通过' if result.approved else '后仍有意见'}："
+                    f"{cs.counts()['total']} 条用例（P0 {cs.counts()['P0']}/P1 {cs.counts()['P1']}/P2 {cs.counts()['P2']}）")
         _emit(states, "reviewing")
         # 逐文档落盘（canonical JSON，schema 同 out/testcases）
         cached.write_text(json.dumps(cs.model_dump(), ensure_ascii=False, indent=2) + "\n",
@@ -163,6 +172,9 @@ def process_job(
         _emit(states, "rendering")
         report = renderer.render_all(sorted(render_dicts, key=lambda d: d["document"]), out_dir)
         outcome.render = report
+        logbus.log("info" if report.ok else "error", "render",
+                   "五格式渲染" + ("完成: " + "; ".join(report.lines) if report.ok
+                                   else "失败: " + "; ".join(report.failures)))
         for s in states:
             if s.stage == "rendering":
                 s.stage = "done"
