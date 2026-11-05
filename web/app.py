@@ -198,6 +198,43 @@ async def save_settings(payload: dict) -> dict:
     return _settings_view(store.settings_save(partial))
 
 
+@app.post("/api/test")
+def test_llm(payload: dict) -> dict:
+    """用对话框当前值真实调用一次当前模型：零重试、30s 超时，结果立返。
+
+    payload 里非空的 provider/model/api_key/base_url_custom/style_custom 以最高优先级
+    参与 resolve_llm_config（Key 框留空即回退已保存槽）；同步 def 端点，跑线程池不阻塞事件循环。
+    """
+    from core.llm import LLMError, chat
+    env: dict[str, str] = {}
+    if payload.get("provider"):
+        env["DOC2TC_PROVIDER"] = str(payload["provider"]).strip().lower()
+    if payload.get("api_key"):
+        env["DOC2TC_API_KEY"] = str(payload["api_key"]).strip()
+    if payload.get("model"):
+        env["DOC2TC_MODEL"] = str(payload["model"]).strip()
+    if payload.get("base_url_custom"):
+        env["DOC2TC_BASE_URL"] = str(payload["base_url_custom"]).strip()
+    if payload.get("style_custom") in ("openai", "anthropic"):
+        env["DOC2TC_STYLE"] = payload["style_custom"]
+    try:
+        cfg = resolve_llm_config(store.settings_all(), env)
+    except ProviderError as e:
+        return {"ok": False, "error": str(e)}
+    # 探测参数：正式任务的 60s×N 重试对测试按钮毫无意义，占线/限流立即如实返回
+    cfg = cfg.model_copy(update={"max_tokens": 1024, "timeout_s": 30, "max_api_retries": 0})
+    t0 = time.perf_counter()
+    try:
+        reply = chat(cfg, "You are a connectivity probe.", "Reply with exactly: OK").strip()
+    except LLMError as e:
+        return {"ok": False, "error": str(e)}
+    if not reply:
+        return {"ok": False, "error": "模型返回为空"}
+    return {"ok": True, "model": cfg.model,
+            "latency_ms": int((time.perf_counter() - t0) * 1000),
+            "reply": reply[:60]}
+
+
 def _settings_view(s: dict) -> dict:
     provider = s.get("provider", "glm")
     return {"provider": provider,

@@ -86,6 +86,9 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
 .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .field input, .field select { width: 100%; }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.test-result { font-size: 13px; margin-top: 12px; border-radius: 7px; padding: 7px 10px; display: none; }
+.test-result.ok  { background: var(--ok-weak); color: var(--ok); }
+.test-result.err { background: var(--err-weak); color: var(--err); word-break: break-all; }
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--brand);
         border-top-color: transparent; border-radius: 50%; animation: rot .8s linear infinite;
         vertical-align: -2px; margin-right: 4px; }
@@ -148,8 +151,10 @@ dialog::backdrop { background: rgba(20,24,30,.4); }
           <option value="anthropic">Anthropic 风格（/v1/messages）</option>
         </select></div>
     </div>
+    <div class="test-result" id="testResult"></div>
     <div class="dlg-foot">
       <button type="button" id="dlgCancel">取消</button>
+      <button type="button" id="dlgTest">测试连接</button>
       <button type="button" class="primary" id="dlgSave">保存</button>
     </div>
   </form>
@@ -226,17 +231,40 @@ $("#sModelSel").onchange = () => {
 $("#sProvider").onchange = () => applyProvider($("#sProvider").value, settingsCache);
 $("#btnSettings").onclick = () => { loadSettings(); $("#dlg").showModal(); };
 $("#dlgCancel").onclick = () => $("#dlg").close();
-$("#dlgSave").onclick = async () => {
+function collectConfig() {   // 对话框当前配置（保存与测试共用）
+  const body = { provider: $("#sProvider").value };
   const model = $("#sModelSel").value === "__manual__"
     ? $("#sModelManual").value.trim() : $("#sModelSel").value;
-  const body = { provider: $("#sProvider").value, model };
+  if (model) body.model = model;
   if ($("#sKey").value.trim()) body.api_key = $("#sKey").value.trim();
   if (body.provider === "custom") {
-    body.base_url_custom = $("#sBase").value.trim();
+    if ($("#sBase").value.trim()) body.base_url_custom = $("#sBase").value.trim();
     body.style_custom = $("#sStyle").value;
   }
+  return body;
+}
+$("#dlgTest").onclick = async () => {
+  const btn = $("#dlgTest"), res = $("#testResult");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>测试中…';
+  res.style.display = "none";
+  try {
+    const r = await fetch("/api/test", { method: "POST", headers: { "content-type": "application/json" },
+                                         body: JSON.stringify(collectConfig()) });
+    const d = await r.json();
+    res.className = "test-result " + (d.ok ? "ok" : "err");
+    res.textContent = d.ok ? `✓ 测试通过 · ${d.model} · ${(d.latency_ms / 1000).toFixed(1)}s`
+                           : `✗ 测试失败：${d.error}`;
+  } catch (e) {
+    res.className = "test-result err";
+    res.textContent = "✗ 请求失败: " + e.message;
+  } finally {
+    res.style.display = "";
+    btn.disabled = false; btn.textContent = "测试连接";
+  }
+};
+$("#dlgSave").onclick = async () => {
   const r = await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" },
-                                           body: JSON.stringify(body) });
+                                           body: JSON.stringify(collectConfig()) });
   if (r.ok) { $("#dlg").close(); loadSettings(); }
   else alert("保存失败: " + (await r.json()).detail);
 };
