@@ -41,8 +41,10 @@ PROVIDERS: dict[str, dict] = {
         "label": "MiniMax",
         "base_url": "https://api.minimaxi.com/v1",
         "style": "openai",
-        "default_model": "MiniMax-M3.1-Flash",
-        "models": ["MiniMax-M3.1-Flash", "MiniMax-M3"],
+        "default_model": "MiniMax-M3",
+        # 国内开放平台（api.minimaxi.com 按量计费通道）现行语言模型；
+        # 注意国际版另有 MiniMax-M3.1-Flash-Preview，仅 M Plan 订阅通道，与本端点不通用
+        "models": ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
         "key_url": "https://platform.minimaxi.com",
     },
     "custom": {

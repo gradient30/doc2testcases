@@ -37,7 +37,7 @@ DEFAULT_SETTINGS = {
     "model:glm": "glm-5.3",
     "model:deepseek": "deepseek-flash",
     "model:mimo": "mimo-v2.6-pro",
-    "model:minimax": "MiniMax-M3.1-Flash",
+    "model:minimax": "MiniMax-M3",
     "model:custom": "",
     "api_key:glm": "",
     "api_key:deepseek": "",
