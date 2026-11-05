@@ -49,6 +49,14 @@ class AbortedError(LLMError):
     """调用方主动取消（重试等待期间响应 abort_check）。"""
 
 
+class OutputTruncatedError(LLMError):
+    """输出被 max_tokens 截断（openai: finish_reason=length；anthropic: stop_reason=max_tokens）。"""
+
+
+# 截断自动升级的封顶（与 LLMConfig.max_tokens 上限一致）
+_MAX_TOKENS_CEIL = 65536
+
+
 def _is_waf_block(status: int, text: str) -> bool:
     return status in (403, 405) and ("3012" in text or "unusual activity" in text)
 
@@ -144,12 +152,23 @@ def _post(url: str, headers: dict[str, str], payload: dict, timeout: int) -> dic
 
 
 def chat(cfg: LLMConfig, system: str, user: str) -> str:
-    """一次对话调用，返回模型文本。限流/网络/5xx 按 retry_interval_s 间隔自动重试。"""
+    """一次对话调用，返回模型文本。限流/网络/5xx 按 retry_interval_s 间隔自动重试；
+    输出被截断时自动翻倍 max_tokens 立即重试（封顶 65536，最多 3 次升级）。"""
     import sys
     attempt = 0
+    bumps = 0
     while True:
         try:
             return _chat_once(cfg, system, user)
+        except OutputTruncatedError as e:
+            if cfg.max_tokens >= _MAX_TOKENS_CEIL or bumps >= 3:
+                raise LLMError(f"输出被截断且 max_tokens 已达上限（{cfg.max_tokens}）仍不完整: {e}") from e
+            bumps += 1
+            cfg = cfg.model_copy(update={"max_tokens": min(cfg.max_tokens * 2, _MAX_TOKENS_CEIL)})
+            print(f"[llm] 输出被截断，max_tokens 提高到 {cfg.max_tokens} 立即重试"
+                  f"（第 {bumps}/3 次升级）", file=sys.stderr, flush=True)
+            logbus.log("warn", "llm", f"输出被截断，max_tokens 提高到 {cfg.max_tokens} 立即重试"
+                        f"（第 {bumps}/3 次升级）")
         except _RetryableLLMError as e:
             if cfg.abort_check is not None and cfg.abort_check():
                 raise AbortedError("已取消（重试等待期间响应取消请求）") from e
@@ -180,9 +199,12 @@ def _chat_once(cfg: LLMConfig, system: str, user: str) -> str:
         data = _post(url, headers, payload, cfg.timeout_s)
         try:
             blocks = data.get("content", [])
-            return "".join(b.get("text", "") for b in blocks if isinstance(b, dict))
+            text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict))
         except Exception as e:  # noqa: BLE001
             raise LLMError(f"响应结构异常: {data}") from e
+        if data.get("stop_reason") == "max_tokens":
+            raise OutputTruncatedError(f"stop_reason=max_tokens（max_tokens={cfg.max_tokens}）")
+        return text
     # 默认 openai 兼容
     url = f"{base}/chat/completions"
     headers = {"content-type": "application/json", "authorization": f"Bearer {cfg.api_key}"}
@@ -192,9 +214,14 @@ def _chat_once(cfg: LLMConfig, system: str, user: str) -> str:
                             {"role": "user", "content": user}]}
     data = _post(url, headers, payload, cfg.timeout_s)
     try:
-        return data["choices"][0]["message"]["content"] or ""
+        choice = data["choices"][0]
+        content = choice["message"]["content"] or ""
+        finish = choice.get("finish_reason", "")
     except Exception as e:  # noqa: BLE001
         raise LLMError(f"响应结构异常: {json.dumps(data, ensure_ascii=False)[:300]}") from e
+    if finish == "length":
+        raise OutputTruncatedError(f"finish_reason=length（max_tokens={cfg.max_tokens}）")
+    return content
 
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.+?)```", re.S)
@@ -208,10 +235,12 @@ def extract_json(text: str) -> Any:
     if m:
         return json.loads(m.group(1).strip())
     t = text.strip()
+    saw_opener = False
     for opener, closer in (("{", "}"), ("[", "]")):
         start = t.find(opener)
         if start < 0:
             continue
+        saw_opener = True
         depth = 0
         in_str = False
         esc = False
@@ -233,18 +262,27 @@ def extract_json(text: str) -> Any:
                 depth -= 1
                 if depth == 0:
                     return json.loads(t[start:i + 1])
+    if saw_opener:   # 有起始括号但始终未闭合：典型的是被 max_tokens 截断
+        raise LLMError(f"JSON 不完整（疑似被 max_tokens 截断），尾部 80 字: …{t[-80:]}")
     raise LLMError("模型回复中找不到 JSON")
 
 
 def chat_json(cfg: LLMConfig, system: str, user: str, *, max_attempts: int = 2) -> Any:
-    """chat + JSON 提取；JSON 解析失败带错误反馈重试一次。"""
+    """chat + JSON 提取；JSON 解析失败带错误反馈重试一次。
+
+    每次提取失败都把模型回复的首尾片段写入运行日志——失败原因（空回复/纯解释文字/
+    被截断的半截 JSON）在日志面板一眼可见，不再只能猜。
+    """
     last_err: Exception | None = None
     prompt = user
-    for _ in range(max_attempts):
+    for i in range(max_attempts):
         text = chat(cfg, system, prompt)
         try:
             return extract_json(text)
         except (LLMError, json.JSONDecodeError) as e:
             last_err = e
+            logbus.log("warn" if i + 1 < max_attempts else "error", "llm",
+                       f"JSON 提取失败（第 {i + 1}/{max_attempts} 次）: {e}；"
+                       f"模型回复首部: {text[:150]!r} 尾部: {text[-150:]!r}")
             prompt = user + f"\n\n注意：你上一次的回复无法解析为 JSON（{e}）。请只输出合法 JSON，不要任何解释文字。"
     raise LLMError(f"模型未能返回合法 JSON: {last_err}")

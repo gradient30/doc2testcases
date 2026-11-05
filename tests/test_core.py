@@ -204,8 +204,59 @@ def t_extract_json():
         try:
             extract_json(bad)
             raise AssertionError("应当解析失败")
-        except LLMError:
-            pass
+        except LLMError as e:
+            if bad.startswith("{"):
+                assert "不完整" in str(e) and "截断" in str(e)   # 未闭合 -> 截断提示
+
+
+def t_llm_truncation_retry():
+    """输出截断（finish_reason=length / stop_reason=max_tokens）：
+    自动翻倍 max_tokens 立即重试；一直截断则升级到 65536 后明确报错。"""
+    import core.llm as llm
+    orig = llm._http_transport
+    seen_caps = []
+
+    def _openai_seq(finishes):
+        it = iter(finishes)
+
+        def _t(url, headers, payload, timeout):
+            seen_caps.append(payload["max_tokens"])
+            finish = next(it)
+            return 200, json.dumps({"choices": [{"message": {"content": "x"},
+                                                 "finish_reason": finish}]})
+        return _t
+
+    try:
+        # 第一次 length -> 升级重试 -> 第二次 stop 正常返回
+        llm._http_transport = _openai_seq(["length", "stop"])
+        cfg = llm.LLMConfig(api_key="sk-test-123456")
+        assert llm.chat(cfg, "s", "u") == "x"
+        assert seen_caps == [8192, 16384]
+        # 一直截断：8192->16384->32768->65536 共 4 次调用后明确报错
+        seen_caps.clear()
+        llm._http_transport = _openai_seq(["length"] * 10)
+        try:
+            llm.chat(llm.LLMConfig(api_key="sk-test-123456"), "s", "u")
+            raise AssertionError("应当报截断错误")
+        except llm.LLMError as e:
+            assert "截断" in str(e) and "65536" in str(e)
+        assert seen_caps == [8192, 16384, 32768, 65536]
+        # anthropic 风格 stop_reason=max_tokens 同样触发
+        seen_caps.clear()
+
+        def _anth(url, headers, payload, timeout):
+            seen_caps.append(payload["max_tokens"])
+            if payload["max_tokens"] > 8192:
+                return 200, json.dumps({"content": [{"type": "text", "text": "ok"}],
+                                        "stop_reason": "end_turn"})
+            return 200, json.dumps({"content": [{"type": "text", "text": "半截"}],
+                                    "stop_reason": "max_tokens"})
+        llm._http_transport = _anth
+        cfg2 = llm.LLMConfig(api_key="sk-test-123456", style="anthropic")
+        assert llm.chat(cfg2, "s", "u") == "ok"
+        assert seen_caps == [8192, 16384]
+    finally:
+        llm._http_transport = orig
 
 
 def t_providers_registry():
@@ -369,6 +420,7 @@ if __name__ == "__main__":
     check("llm 取消即时响应(不睡满间隔)", t_llm_abort_responsive)
     check("llm 业务错误封套处理(1005/3009 可重试)", t_llm_business_envelope)
     check("llm 模型回复 JSON 提取", t_extract_json)
+    check("llm 输出截断自动升级 max_tokens 重试", t_llm_truncation_retry)
     check("providers 注册表完整性", t_providers_registry)
     check("providers 老配置迁移(纯函数)", t_providers_migrate)
     check("providers 配置组装 resolve_llm_config", t_resolve_llm_config)
