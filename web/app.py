@@ -29,6 +29,7 @@ sys.path.insert(0, str(BASE_DIR))
 from core.jobs import JobCanceled, process_job  # noqa: E402
 from core.llm import LLMConfig  # noqa: E402
 from core.parsers import SUPPORTED_EXTS  # noqa: E402
+from core.providers import PROVIDERS, ProviderError, resolve_llm_config  # noqa: E402
 from core.renderer import FORMATS  # noqa: E402
 from core.store import Store  # noqa: E402
 
@@ -66,14 +67,10 @@ def _job_dir(job_id: str) -> Path:
 
 
 def _llm_config() -> LLMConfig:
-    s = store.settings_all()
-    if not s.get("api_key"):
-        raise HTTPException(400, "未配置 API Key：请先在「设置」中保存（或用环境变量 DOC2TC_API_KEY 启动）")
     try:
-        return LLMConfig(api_key=s["api_key"], base_url=s["base_url"], model=s["model"],
-                         style=s["style"])
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(400, f"模型配置无效: {e}") from e
+        return resolve_llm_config(store.settings_all())
+    except ProviderError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 def _render_payload(report) -> dict:
@@ -157,35 +154,59 @@ def index() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict:
     s = store.settings_all()
-    return {"ok": True, "version": "1.0.0", "key_configured": bool(s.get("api_key")),
-            "model": s.get("model")}
+    provider = s.get("provider", "glm")
+    return {"ok": True, "version": "1.0.0", "provider": provider,
+            "model": s.get(f"model:{provider}") or PROVIDERS[provider]["default_model"],
+            "key_configured": bool(s.get(f"api_key:{provider}"))}
+
+
+@app.get("/api/providers")
+def get_providers() -> dict:
+    """预设清单 + 每家 Key 配置状态（明文 Key 永不出现在任何响应里）。"""
+    s = store.settings_all()
+    return {"providers": [
+        {"id": pid, "label": p["label"], "base_url": p["base_url"], "style": p["style"],
+         "default_model": p["default_model"], "models": p["models"], "key_url": p["key_url"],
+         "key_configured": bool(s.get(f"api_key:{pid}"))}
+        for pid, p in PROVIDERS.items()]}
 
 
 @app.get("/api/settings")
 def get_settings() -> dict:
-    s = store.settings_all()
-    key = s.get("api_key", "")
-    s["api_key_masked"] = (key[:4] + "…" + key[-4:]) if len(key) > 12 else ("已配置" if key else "")
-    s["api_key"] = ""
-    return s
+    return _settings_view(store.settings_all())
 
 
 @app.post("/api/settings")
 async def save_settings(payload: dict) -> dict:
-    partial = {k: payload[k] for k in ("base_url", "model", "style", "rounds")
-               if k in payload and str(payload[k]).strip() != ""}
+    provider = str(payload.get("provider", "")).strip().lower()
+    if provider:
+        if provider not in PROVIDERS:
+            raise HTTPException(400, f"未知厂商 {provider}")
+    else:  # 未带 provider 时，Key/模型落在当前厂商
+        provider = store.settings_all().get("provider", "glm")
+    partial: dict = {"provider": provider}
+    if payload.get("model") and str(payload["model"]).strip():
+        partial[f"model:{provider}"] = str(payload["model"]).strip()
     if payload.get("api_key") and str(payload["api_key"]).strip() not in ("", "（未更改）"):
-        partial["api_key"] = str(payload["api_key"]).strip()
-    if partial.get("style") not in (None, "openai", "anthropic"):
-        raise HTTPException(400, "style 只能是 openai 或 anthropic")
+        partial[f"api_key:{provider}"] = str(payload["api_key"]).strip()
+    if payload.get("base_url_custom") and str(payload["base_url_custom"]).strip():
+        partial["base_url:custom"] = str(payload["base_url_custom"]).strip()
+    if payload.get("style_custom") in ("openai", "anthropic"):
+        partial["style:custom"] = payload["style_custom"]
+    if str(payload.get("rounds", "")).strip():
+        partial["rounds"] = str(payload["rounds"]).strip()
     return _settings_view(store.settings_save(partial))
 
 
 def _settings_view(s: dict) -> dict:
-    key = s.get("api_key", "")
-    s["api_key_masked"] = (key[:4] + "…" + key[-4:]) if len(key) > 12 else ("已配置" if key else "")
-    s["api_key"] = ""
-    return s
+    provider = s.get("provider", "glm")
+    return {"provider": provider,
+            "rounds": s.get("rounds", 2),
+            "model": s.get(f"model:{provider}", ""),
+            "model_by_provider": {pid: s.get(f"model:{pid}", "") for pid in PROVIDERS},
+            "custom": {"base_url": s.get("base_url:custom", ""),
+                       "style": s.get("style:custom", "openai")},
+            "keys_configured": {pid: bool(s.get(f"api_key:{pid}")) for pid in PROVIDERS}}
 
 
 @app.post("/api/jobs")
