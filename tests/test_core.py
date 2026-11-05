@@ -111,14 +111,14 @@ def t_store_and_recover():
         assert marked == ["j1"]
         job = s.get_job("j1")
         assert job["status"] == "interrupted" and "重试" in job["error"]
-        # 设置读写 + 掩码视图不回传明文（api_key 恒为空串）
-        s.settings_save({"api_key": "sk-test-1234567890", "model": "glm-4.6"})
+        # 设置读写：新键集（厂商分槽）
+        s.settings_save({"api_key:glm": "sk-test-1234567890", "model:glm": "glm-5.3"})
         saved = s.settings_all()
-        assert saved["api_key"].startswith("sk-test")  # Store 层保存的是明文本体
+        assert saved["api_key:glm"].startswith("sk-test")  # Store 层保存的是明文本体
         s.close()
         s2 = Store(tmp / "t.db")                       # 重开数据库数据仍在
         assert s2.get_job("j1")["params"]["rounds"] == 2
-        assert s2.settings_all()["model"] == "glm-4.6"
+        assert s2.settings_all()["model:glm"] == "glm-5.3"
         s2.close()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -271,6 +271,38 @@ def t_resolve_llm_config():
             assert needle in str(e), str(e)
 
 
+def t_settings_migration():
+    """settings_all 读取时自动迁移老键并落库删除；未知端点归 custom 且原值保留。"""
+    from core.store import Store
+    tmp = Path(tempfile.mkdtemp(prefix="d2t_mig_"))
+    try:
+        s = Store(tmp / "a.db")
+        with s._lock, s._conn:  # 直接写老键模拟旧版数据库（绕过新白名单）
+            s._conn.executemany(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                [("api_key", "sk-old-1234567890"),
+                 ("base_url", "https://open.bigmodel.cn/api/paas/v4"),
+                 ("model", "glm-4.6"), ("style", "openai")])
+        got = s.settings_all()
+        assert got["provider"] == "glm" and got["api_key:glm"].startswith("sk-old")
+        assert got["model:glm"] == "glm-4.6"
+        with s._lock:  # 旧键已从库中删除
+            left = {r[0] for r in s._conn.execute("SELECT key FROM settings")}
+        assert not (left & {"api_key", "base_url", "model", "style"})
+        s.close()
+        s2 = Store(tmp / "b.db")  # 未知端点 -> custom，原值保留
+        with s2._lock, s2._conn:
+            s2._conn.executemany(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                [("api_key", "sk-x-1234567890"), ("base_url", "https://gw.example/v1")])
+        got2 = s2.settings_all()
+        assert got2["provider"] == "custom" and got2["api_key:custom"] == "sk-x-1234567890"
+        assert got2["base_url:custom"] == "https://gw.example/v1"
+        s2.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -287,5 +319,6 @@ if __name__ == "__main__":
     check("providers 注册表完整性", t_providers_registry)
     check("providers 老配置迁移(纯函数)", t_providers_migrate)
     check("providers 配置组装 resolve_llm_config", t_resolve_llm_config)
+    check("settings 老库迁移落库", t_settings_migration)
     print(f"\n{len(PASS)} 通过, {len(FAIL)} 失败")
     sys.exit(1 if FAIL else 0)

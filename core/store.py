@@ -11,6 +11,8 @@ import threading
 import time
 from pathlib import Path
 
+from . import providers
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id         TEXT PRIMARY KEY,
@@ -30,11 +32,20 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 DEFAULT_SETTINGS = {
-    "api_key": "",
-    "base_url": "https://open.bigmodel.cn/api/paas/v4",
-    "model": "glm-4.6",
-    "style": "openai",
+    "provider": "glm",
     "rounds": 2,
+    "model:glm": "glm-5.3",
+    "model:deepseek": "deepseek-flash",
+    "model:mimo": "mimo-v2.6-pro",
+    "model:minimax": "MiniMax-M3.1-Flash",
+    "model:custom": "",
+    "api_key:glm": "",
+    "api_key:deepseek": "",
+    "api_key:mimo": "",
+    "api_key:minimax": "",
+    "api_key:custom": "",
+    "base_url:custom": "",
+    "style:custom": "openai",
 }
 
 
@@ -110,8 +121,16 @@ class Store:
     def settings_all(self) -> dict:
         with self._lock:
             rows = self._conn.execute("SELECT key, value FROM settings").fetchall()
+        raw = {r["key"]: r["value"] for r in rows}
+        # 老库一次性迁移：旧平铺四字段 -> 厂商槽，迁移结果落库并删除旧键
+        legacy = providers.migrate_legacy_settings(raw)
+        if legacy:
+            self._settings_write(legacy)  # 不走 settings_save：那会在回读时再次触发迁移
+            self.settings_delete_keys([k for k in
+                                       ("api_key", "base_url", "model", "style") if k in raw])
+            raw.update(legacy)
         merged = dict(DEFAULT_SETTINGS)
-        merged.update({r["key"]: r["value"] for r in rows})
+        merged.update({k: v for k, v in raw.items() if k in DEFAULT_SETTINGS})
         # rounds 存成 int
         try:
             merged["rounds"] = int(merged.get("rounds", 2))
@@ -119,7 +138,7 @@ class Store:
             merged["rounds"] = 2
         return merged
 
-    def settings_save(self, partial: dict) -> dict:
+    def _settings_write(self, partial: dict) -> None:
         for k, v in partial.items():
             if k in DEFAULT_SETTINGS and v is not None and str(v).strip() != "":
                 with self._lock, self._conn:
@@ -127,7 +146,16 @@ class Store:
                         "INSERT INTO settings (key, value) VALUES (?, ?)"
                         " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                         (k, str(v).strip()))
+
+    def settings_save(self, partial: dict) -> dict:
+        self._settings_write(partial)
         return self.settings_all()
+
+    def settings_delete_keys(self, keys: list[str]) -> None:
+        if not keys:
+            return
+        with self._lock, self._conn:
+            self._conn.executemany("DELETE FROM settings WHERE key = ?", [(k,) for k in keys])
 
     def close(self) -> None:
         with self._lock:
