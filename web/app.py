@@ -222,8 +222,10 @@ def test_llm(payload: dict) -> dict:
     except ProviderError as e:
         return {"ok": False, "error": str(e)}
     # 探测参数：正式任务的 60s×N 重试对测试按钮毫无意义，占线/限流立即如实返回。
-    # 完整重新构造（而非 model_copy）以走一遍 pydantic 校验，避免绕过 ge/le 约束的隐性风险
-    cfg = LLMConfig(**cfg.model_dump(), max_tokens=1024, timeout_s=30, max_api_retries=0)
+    # dict 合并后整体构造（而非 model_copy）以走一遍 pydantic 校验——注意不能用同名关键字
+    # 双传（model_dump() 已含这些键，重复传参会 TypeError）
+    cfg = LLMConfig(**{**cfg.model_dump(), "max_tokens": 1024,
+                       "timeout_s": 30, "max_api_retries": 0})
     t0 = time.perf_counter()
     try:
         reply = chat(cfg, "You are a connectivity probe.", "Reply with exactly: OK").strip()

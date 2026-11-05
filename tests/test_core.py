@@ -264,6 +264,10 @@ def t_resolve_llm_config():
                                "base_url:custom": "https://gw/v1", "style:custom": "anthropic",
                                "model:custom": "m1"}, env={})
     assert (cfg4.base_url, cfg4.style, cfg4.model) == ("https://gw/v1", "anthropic", "m1")
+    # 探测参数覆盖构造（与 web /api/test 同款表达式）：完整走校验且不与 dump 键重复传参
+    probe = LLMConfig(**{**cfg4.model_dump(), "max_tokens": 1024,
+                         "timeout_s": 30, "max_api_retries": 0})
+    assert probe.max_tokens == 1024 and probe.timeout_s == 30 and probe.max_api_retries == 0
     for bad_settings, needle in (
             ({"provider": "deepseek"}, "DeepSeek"),                    # 缺 Key 带厂商名
             ({"provider": "custom", "api_key:custom": "sk-c-1234567890"}, "Base URL"),  # custom 缺 url
